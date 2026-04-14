@@ -1,0 +1,16 @@
+2026-04-14 08:10:47 | INFO     | Finance System initialized in MYSQL mode.
+2026-04-14 08:10:47 | ERROR    | BET FAILED: User 1 | Msg: Transaction already in progress
+2026-04-14 08:13:58 | INFO     | Finance System initialized in MYSQL mode.
+2026-04-14 08:13:59 | ERROR    | BET FAILED: User 1 | Msg: 1146 (42S02): Table 'unified_account_system.bets' doesn't exist
+2026-04-14 08:15:13 | INFO     | Finance System initialized in MYSQL mode.
+2026-04-14 08:15:13 | ERROR    | BET FAILED: User 1 | Msg: 1146 (42S02): Table 'unified_account_system.bets' doesn't exist
+2026-04-14 08:16:52 | INFO     | Finance System initialized in MYSQL mode.
+2026-04-14 08:16:52 | INFO     | BET SUCCESS: User 1 | App iMarket | Amt 100.0 | BetID 1
+2026-04-14 08:16:52 | INFO     | SETTLE SUCCESS: BetID 1 | WinAmt 150.0 | NetProfit 50.0
+2026-04-14 08:22:42 | INFO     | Finance System initialized in REDIS mode.
+2026-04-14 08:24:40 | INFO     | Finance System initialized in REDIS mode.
+2026-04-14 08:26:16 | INFO     | Finance System initialized in REDIS mode.
+2026-04-14 08:26:17 | ERROR    | Access Denied: User 1 -> iMarket
+2026-04-14 08:27:16 | INFO     | Finance System initialized in REDIS mode.
+2026-04-14 08:27:16 | INFO     | BET SUCCESS: User 1 | App iMarket | Amt 100.0 | BetID 1
+2026-04-14 08:27:16 | INFO     | SETTLE SUCCESS: BetID 1 | WinAmt 150.0 | NetProfit 50.0
