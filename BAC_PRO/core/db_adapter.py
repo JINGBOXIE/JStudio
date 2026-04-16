@@ -78,10 +78,78 @@ class RedisAdapter:
         except Exception as e:
             return None
 
-# core/db_adapter.py
+# === 今日新增：下注流水写入逻辑（对齐老版本变量名 self.client） ===
 
+    def record_app_transaction(self, user_id, username, amount, tx_type, strategy, hist_len, bet_len, action):
+        """
+        核心写入函数：处理余额更新与流水存档。
+        使用了 self.client 确保与你的初始化变量名一致。
+        """
+        import uuid, datetime
+        # 1. 生成流水 ID 和时间
+        tx_id = f"TX_{uuid.uuid4().hex[:10].upper()}"
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        norm_action = "CONTINUE" if str(action).upper() in ["S", "CONTINUE", "STAY"] else "CUT"
+        
+        try:
+            # 🟢 控制台调试：如果你在终端运行，这里会显示数据飞往哪个库
+            conn_info = self.client.connection_pool.connection_kwargs
+            print(f"📡 [DEBUG] Redis Writing to: {conn_info.get('host')} | TX: {tx_id}")
 
+            # 2. 开启管道 (Pipeline) 保证原子性
+            pipe = self.client.pipeline()
+            
+            # 3. 强制转换数字类型，防止 Redis 报错
+            val = float(amount)
+            
+            # 4. 执行写入
+            # 更新余额
+            new_balance = self.client.hincrbyfloat(f"u:info:{user_id}", "balance", val)
+            # 记录用户名
+            self.client.hset(f"u:info:{user_id}", "user", username)
+            
+            # 5. 构造详细流水包
+            tx_data = {
+                "userID": user_id,
+                "user": username,
+                "type": tx_type,
+                "strategy": strategy,
+                "action": norm_action,
+                "hist_len": hist_len,
+                "bet_len": bet_len,
+                "amount": val,
+                "balance": new_balance,
+                "datetime": now,
+                "txID": tx_id
+            }
+            
+            # 6. 写入 Hash 详情并推入用户流水列表
+            pipe.hset(f"tx:{tx_id}", mapping=tx_data)
+            pipe.lpush(f"u:tx_list:{user_id}", tx_id)
+            
+            # ⚡ 这一步是关键：必须执行管道，数据才会真的发给 Redis 服务器
+            pipe.execute()
+            
+            return new_balance
+            
+        except Exception as e:
+            print(f"❌ Redis Write Error: {e}")
+            return None
 
+    def sync_transaction(self, uid, username, amount, tx_type, strategy, h_len, b_len, action):
+        """
+        备用入口：直接指向主写入函数
+        """
+        return self.record_app_transaction(
+            user_id=uid, 
+            username=username, 
+            amount=amount, 
+            tx_type=tx_type, 
+            strategy=strategy, 
+            hist_len=h_len, 
+            bet_len=b_len, 
+            action=action
+        )
 def generate_fp_hash(cur_side, cur_len, hist_B, hist_P, hist_min=3):
     """
     V8 物理对齐正式版

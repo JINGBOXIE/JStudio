@@ -4,7 +4,7 @@ import os
 import sys
 import base64
 from modules.i18n import t
-from tabs.tab_practice_v4 import render_practice_tab
+from tabs.tab_practice_0 import render_practice_tab
 from tabs.tab_ai_vision import render_ai_vision_tab  
 from tabs.tab_bacc_knowledge import render_knowledge_tab
 from core.db_adapter import RedisAdapter
