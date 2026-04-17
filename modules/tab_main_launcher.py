@@ -7,45 +7,45 @@ def render_launcher_home(lang):
     """
     # 1. 语言文案配置
     if lang == "CN":
-        TITLE = "J STUDIO | 核心功能矩阵"
-        DESC = "欢迎访问统一集成开发环境。当前核心引擎已就绪："
+        TITLE = "J STUDIO | SIMPLICITY➕FOCUS"
+        DESC = "当前核心引擎已就绪："
         
         # 模块介绍
         MOD_IMARKET = {
-            "title": "📈 iMarket Pro",
-            "desc": "实时金融数据监控与决策支持。集成 TSLA 成本分析、宏观新闻聚合及深度市场趋势扫描。"
+            "title": "iMarket AI Engine",
+            "desc": "实时金融数据监控与决策支持。个股：成本分析、财经政治影响、经济周期判断及深度市场趋势扫描。"
         }
         MOD_BACPRO = {
-            "title": "🃏 BAC_PRO Engine",
-            "desc": "基于 AI 指纹识别的大规模数据模拟器。支持 10 亿级样本运行，实现精准的模式识别与逻辑校验。"
+            "title": "BACCARAT AI Engine",
+            "desc": "基于 AI 指纹识别的百家乐s实盘直觉训练。指纹数据采用万亿级样本抽样，实现完整的模式识别与逻辑校验。"
         }
         MOD_BOOK = {
-            "title": "📜 The Great Way",
-            "desc": "大道至简：深度哲学讨论社区。旨在将复杂的哲学思考系统化、简洁化（模块开发中）。"
+            "title": "The Great Way，Made Simple",
+            "desc": "大道至简：深度训练化的AI哲学模型。旨在用【大道至简】将复杂的哲学思考/社会运行/复杂人性系统化、简洁化（模块开发中）。"
         }
         
         STATUS_TITLE = "🛰️ 系统运行状态"
         TIP = "提示：点击左侧功能键进入具体模块，点击底部 EXIT 安全登出。"
-    else:
-        TITLE = "J STUDIO | CORE MATRIX"
-        DESC = "Welcome to the unified environment. Core engines are currently active:"
+    elif lang == "EN":
+        TITLE = "J STUDIO | SIMPLICITY ➕ FOCUS"
+        DESC = "Core engines are currently active:"
         
-        # Module Info
+        # 模块介绍 / Module Descriptions
         MOD_IMARKET = {
-            "title": "📈 iMarket Pro",
-            "desc": "Real-time financial monitoring. Integrated TSLA cost-basis analysis and macro market intelligence."
+            "title": "iMarket AI Engine",
+            "desc": "Real-time financial data monitoring and decision support. Features: cost-basis analysis, geopolitical impacts, economic cycle assessment, and deep market trend scanning."
         }
         MOD_BACPRO = {
-            "title": "🃏 BAC_PRO Engine",
-            "desc": "AI Fingerprint scanning & massive data simulation. Supports 1-billion-sample pattern recognition."
+            "title": "BACCARAT AI Engine",
+            "desc": "Baccarat live intuition training based on AI fingerprint recognition. Fingerprint data is sampled from trillion-level datasets for complete pattern recognition and logic validation."
         }
         MOD_BOOK = {
-            "title": "📜 The Great Way",
-            "desc": "Philosophy Simplified: A deep thinking forum designed for systemic conceptual clarity (In Dev)."
+            "title": "The Great Way, Made Simple",
+            "desc": "Simplicity is the ultimate sophistication: A deeply trained AI philosophical model. Designed to systematize and simplify complex philosophy, social dynamics, and human nature (Under Development)."
         }
         
-        STATUS_TITLE = "🛰️ SYSTEM STATUS"
-        TIP = "Tip: Use sidebar buttons to switch modules. Click EXIT to log out securely."
+        STATUS_TITLE = "🛰️ System Status"
+        TIP = "Tip: Click navigation buttons to enter modules; click EXIT to sign out securely." 
 
     # --- 2. UI 渲染 ---
     
