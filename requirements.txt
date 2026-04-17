@@ -1,20 +1,30 @@
-numpy==2.4.3
-google-generativeai==0.8.6
-beautifulsoup4==4.14.3
-streamlit>=1.30.0
-redis==5.0.1
-pandas>=2.0.0
-matplotlib==3.10.8
-opencv-python-headless==4.13.0.92
-Pillow==12.1.1
-protobuf>=3.20.2,<6.0.0
-yfinance>=0.2.40
-mplfinance
-feedparser
-requests
-plotly
-pytz
+# --- 基础架构 ---
+streamlit>=1.30.0 
+pandas 
+numpy 
+pytz 
+requests 
+python-dotenv
 
+# --- 数据库 (修复截图报错的关键) ---
+redis==5.0.1 
+upstash-redis
+
+# --- AI 核心 ---
+google-generativeai==0.8.6 
+protobuf>=3.20.2,<6.0.0 
+
+# --- 金融数据与监控 ---
+yfinance>=0.2.40 
+feedparser 
+mplfinance 
+
+# --- 视觉识别与渲染 (CORE MATRIX 所需) ---
+plotly 
+matplotlib==3.10.8 
+opencv-python-headless==4.13.0.92 
+Pillow==12.1.1 
+beautifulsoup4==4.14.3
 
 
 

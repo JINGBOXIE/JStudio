@@ -2,7 +2,6 @@
 # tab_practice_JStudio.py 
 # -修改这里39行附近max_shoes = 来设定运行多少靴，每个STREAK仅下一注
 # ---------------------------------------------------------
-
 import streamlit as st
 import os
 import sys
@@ -10,7 +9,7 @@ import pandas as pd
 import random
 import redis
 import time 
-
+import json
 # 1. 路径注入
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -27,6 +26,82 @@ from core.sbi_full_model import compute_sbi_ev_from_counts
 from core.snapshot_engine import get_fp_components
 from core.db_adapter import RedisAdapter, generate_fp_hash 
 
+# --- 1. 弹窗定义区 (从 Redis 实时提取) ---
+
+
+@st.dialog("📊 最近 20 手下注" if st.session_state.get('lang') == "CN" else "📊 Recent 20 Bets")
+def show_recent_bets_dialog():
+    record_adapter = st.session_state.get('record_adapter')
+    uid = st.session_state.get('auth_user', "J")
+    is_cn = st.session_state.get('lang') == "CN"
+    
+    if not record_adapter:
+        st.error("Redis Error")
+        return
+
+    try:
+        r = record_adapter.client
+        # 1. 按照 check_redis.py 逻辑，先从 List 拿 ID
+        tx_ids = r.lrange(f"u:tx_list:{uid}", 0, 19)
+        if not tx_ids:
+            st.info("暂无记录" if is_cn else "No records.")
+            return
+
+        # 2. 遍历 ID 拿 Hash 详情
+        all_records = []
+        for tid in tx_ids:
+            data = r.hgetall(f"tx:{tid}")
+            if data:
+                all_records.append(data)
+        
+        df = pd.DataFrame(all_records)
+        
+        # 中英文列名映射
+        col_map = {
+            'datetime': '时间' if is_cn else 'Time',
+            'type': '类型' if is_cn else 'Type',
+            'amount': '盈亏' if is_cn else 'Net',
+            'action': '动作' if is_cn else 'Action',
+            'bet_len': '连长度' if is_cn else 'BetLen',
+            'strategy': '策略' if is_cn else 'Strategy'
+        }
+        
+        # 过滤并重命名列
+        df = df[[c for c in col_map.keys() if c in df.columns]]
+        df.rename(columns=col_map, inplace=True)
+        
+        st.dataframe(df, use_container_width=True)
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+@st.dialog("📈 综合报表" if st.session_state.get('lang') == "CN" else "📈 Analytics")
+def show_summary_report_dialog():
+    record_adapter = st.session_state.get('record_adapter')
+    uid = st.session_state.get('auth_user', "J")
+    is_cn = st.session_state.get('lang') == "CN"
+
+    try:
+        r = record_adapter.client
+        tx_ids = r.lrange(f"u:tx_list:{uid}", 0, -1)
+        if not tx_ids:
+            st.warning("数据不足" if is_cn else "Insufficient data.")
+            return
+
+        data_list = [r.hgetall(f"tx:{tid}") for tid in tx_ids]
+        df = pd.DataFrame(data_list)
+        df['amount'] = pd.to_numeric(df['amount'], errors='coerce').fillna(0)
+
+        # 报表头部
+        c1, c2 = st.columns(2)
+        c1.metric("总盈亏" if is_cn else "Total Net", f"${df['amount'].sum():,.2f}")
+        c2.metric("总单数" if is_cn else "Total Bets", len(df))
+        
+        # 累计收益图
+        st.markdown("---")
+        st.line_chart(df['amount'].iloc[::-1].cumsum())
+    except Exception as e:
+        st.error(f"Error: {e}")
+        
 def render_practice_tab(lang):
     # --- 1. 初始化变量 ---
     if 'bet_input_red' not in st.session_state: st.session_state.bet_input_red = 0
@@ -100,6 +175,7 @@ def render_practice_tab(lang):
         st.session_state.balance = 10000.0
         reset_logic()
         st.session_state.bac_pro_v8_final = True
+     
         
     def handle_deal_click():
         if 'styled_results' not in st.session_state: st.session_state.styled_results = []
@@ -153,38 +229,39 @@ def render_practice_tab(lang):
                 new_bal, net_profit, _ = settle_hand(oc.winner, current_bets, st.session_state.balance)
                 st.session_state.balance = new_bal
                 
-     
-                # --- 🚀 核心修改：同步到 Redis 测试库流水账 ---
-
-                # 显式从 session_state 获取记录适配器
+                # --- 🚀 核心修改：同步到 Redis 库流水账 ---
                 record_writer = st.session_state.get('record_adapter')
-                
-                # 只有在有实际下注金额且适配器存在时才执行
                 if record_writer and total_bet > 0:
                     try:
-                        # 转换动作文案
+                        # A. 获取动态 ID 和 Name (解决登录实际身份问题)
+                        target_uid = st.session_state.get('auth_user', "J")
+                        target_uname = st.session_state.get('username', f"User_{target_uid}")
+
+                        # B. 计算真实的物理连开长度 (CUR_LEN)
+                        clean_seq = st.session_state.get('clean_results', [])
+                        cur_side = clean_seq[-1] if clean_seq else None
+                        cur_len = 0
+                        for x in reversed(clean_seq):
+                            if x == cur_side: cur_len += 1
+                            else: break
+
+                        # C. 映射动作
                         act_map = {"C": "CUT", "S": "CONTINUE"}
                         act = act_map.get(current_action, "MANUAL")
 
-                        # 关键：调用 record_writer 而不是原本的 adapter
+                        # D. 写入 Redis (注意：补齐了 username 以修复 TypeError)
                         record_writer.record_app_transaction(
-                            user_id="J",             
-                            username="User_J",
-                            amount=net_profit,       # 这里的净盈亏存入 amount
+                            user_id=target_uid,             
+                            username=target_uname,      # 必须参数
+                            amount=net_profit,       
                             tx_type="AUTORUN" if st.session_state.auto_run_active else "DEAL",
-                            strategy="V8_AUTO", 
-                            # 提取侧边栏滑块的当前值
+                            strategy=st.session_state.get('strategy_mode', "V8_AUTO"), 
                             hist_len=st.session_state.get('h_min_slider', 0), 
-                            bet_len=len(st.session_state.results), # 当前靴的局数
+                            bet_len=cur_len,            # 修正后的下注瞬间长度
                             action=act  
                         )
-                        # 打印到控制台，确认代码跑到了这里
-                        print(f"✅ [SUCCESS] Data sent to TEST-DB (Amount: {net_profit})")
                     except Exception as e:
-                        # 如果写入失败，在后台报错但不中断前端气球
-                        print(f"❌ [ERROR] Redis Sync Failed: {e}")
-                # --- 同步结束 ---
-                
+                        print(f"Redis Sync Error: {e}")
                 
                 st.session_state.rank_counts, st.session_state.stats = update_shoe_stats(oc, st.session_state.rank_counts, st.session_state.stats)
 
@@ -421,24 +498,23 @@ def render_practice_tab(lang):
         
         st.caption(f"Remaining: {remaining} (Cut: {st.session_state.cut_card_at})")
 
-        exp_title = "💰 Betting History" if st.session_state.lang == "EN" else "💰 投注记录"
-        with st.expander(exp_title, expanded=True):
-            st.metric("Balance (USD)", f"${st.session_state.balance:,.2f}")
-            if st.session_state.get('bet_history'):
-                history_html = ""
-                for rec in reversed(st.session_state.bet_history):
-                    net_color = "#00FFAA" if rec['net'] > 0 else "#FF4444" if rec['net'] < 0 else "#888"
-                    history_html += f"""
-                    <div style='font-size:0.8rem; margin-bottom:8px; border-bottom:1px solid #444; padding-bottom:4px; font-family:monospace;'>
-                        <span style='color:#888;'>#{rec['hand_no']}</span> | <b>{rec['winner']}</b> | 
-                        <span style='color:{net_color};'>${rec['net']:+,.2f}</span>
-                    </div>"""
-                st.markdown(f'<div style="height: 200px; overflow-y: auto;">{history_html}</div>', unsafe_allow_html=True)
-            else:
-                st.caption("No records." if st.session_state.lang == "EN" else "本靴暂无记录")
-
         if st.session_state.end_shoe:
             st.warning("🟥 切牌线已到" if st.session_state.lang == "CN" else "🟥 CUT CARD REACHED")
+        # ... 在 sidebar 或主面板的合适位置 ...
+        st.markdown("---")
+        
+        # 按钮布局
+
+        is_cn = (lang == "CN")
+        c_btn1, c_btn2 = st.columns(2)
+            
+        with c_btn1:
+            if st.button("📊 " + ("最近下注" if is_cn else "Recent"), use_container_width=True):
+                show_recent_bets_dialog()
+                
+        with c_btn2:
+            if st.button("📈 " + ("综合报表" if is_cn else "Reports"), use_container_width=True):
+                show_summary_report_dialog()
 
     # --- 6. 主界面渲染 ---
     # 获取当前语言字典 (与 i18n.py 键值对齐)
@@ -777,4 +853,5 @@ def render_practice_tab(lang):
             time.sleep(0.1) # 增加微小延迟防止 UI 渲染过载
             run_auto_engine()
             st.rerun()
+
 
