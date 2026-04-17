@@ -8,7 +8,7 @@ def render_launcher_home(lang):
     # 1. 语言文案配置
     if lang == "CN":
         TITLE = "J STUDIO | SIMPLICITY➕FOCUS"
-        DESC = "当前核心引擎已就绪："
+        DESC = "🚀 当前核心引擎已就绪："
         
         # 模块介绍
         MOD_IMARKET = {
@@ -28,7 +28,7 @@ def render_launcher_home(lang):
         TIP = "提示：点击左侧功能键进入具体模块，点击底部 EXIT 安全登出。"
     elif lang == "EN":
         TITLE = "J STUDIO | SIMPLICITY ➕ FOCUS"
-        DESC = "Core engines are currently active:"
+        DESC = "🚀 Core engines are currently active:"
         
         # 模块介绍 / Module Descriptions
         MOD_IMARKET = {
