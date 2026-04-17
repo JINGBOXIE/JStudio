@@ -75,22 +75,22 @@ L_MAP = {
         "bal": "J 资金余额", 
         "back": "返回主页",
         "welcome": "简单➕专注", 
-        "select": "请选择功能模块",
+        "select": "请选择左侧功能模块开始体验",
         # 新增以下三行
-        "nav_im": "iMarket Pro 市场分析", 
-        "nav_bp": "BAC_PRO 策略引擎", 
-        "nav_gw": "The Great Way 哲学之道"
+        "nav_im": "iMarket市场AI分析", 
+        "nav_bp": "百家乐AI引擎", 
+        "nav_gw": "大道至简"
     },
     "EN": {
         "exit": "EXIT", 
         "bal": "J Balance", 
         "back": "PORTAL",
         "welcome": "SIMPLICITY ➕ FOCUS", 
-        "select": "Select Functional Engine",
+        "select": "Select Functional Engine from sidebar",
         # 新增以下三行
-        "nav_im": "iMarket Pro", 
-        "nav_bp": "BAC_PRO Engine", 
-        "nav_gw": "The Great Way"
+        "nav_im": "iMarket AI Driving", 
+        "nav_bp": "BACCARAT AI Engine", 
+        "nav_gw": "The Great Way, Made Simple"
     }
 }
 

@@ -60,7 +60,7 @@ def load_tab_module(app_folder, tab_file):
 # --- 2. 页面配置与初始化 ---
 st.set_page_config(
     layout="wide", 
-    page_title="J Studio | Unified Platform", 
+    page_title="J Studio | Gaming Logic", 
     page_icon="🤖"
 )
 
@@ -77,9 +77,9 @@ L_MAP = {
         "welcome": "简单➕专注", 
         "select": "请选择左侧功能模块开始体验",
         # 新增以下三行
-        "nav_im": "iMarket市场AI分析", 
-        "nav_bp": "百家乐策略引擎", 
-        "nav_gw": "大道至简"
+        "nav_im": "iMarket-投资AI引擎", 
+        "nav_bp": "iBACCARAT-投注AI引擎", 
+        "nav_gw": "博弈逻辑"
     },
     "EN": {
         "exit": "EXIT", 
@@ -88,9 +88,9 @@ L_MAP = {
         "welcome": "SIMPLICITY ➕ FOCUS", 
         "select": "Select Functional Engine from sidebar",
         # 新增以下三行
-        "nav_im": "iMarket powered by AI", 
-        "nav_bp": "BACCARAT Strategy Engine", 
-        "nav_gw": "The Great Way, Made Simple"
+        "nav_im": "iMarket - AI ENGINE", 
+        "nav_bp": "iBACCARAT- AI ENGINE", 
+        "nav_gw": "GAMING LOGIC"
     }
 }
 
@@ -202,42 +202,42 @@ with st.sidebar:
 
     # --- 建议修改的代码块 ---
     with col_bal:
-        display_balance = "N/A"
-        try:
-            # 1. 确保路径能够找到 RedisAdapter (位于 core 文件夹)
-            from core.db_adapter import RedisAdapter
+            display_balance = "N/A"
+            # 动态获取当前用户名
+            current_uid = st.session_state.get('auth_user', 'J').upper()
+            user_map = {"J": "J", "A": "A", "D": "D"}
+            display_name = user_map.get(current_uid, current_uid)
             
-            # 2. 仿照练习模式，优先从 session 缓存适配器，避免重复连接
-            if 'record_adapter' not in st.session_state:
-                # 关键点：使用与练习模式完全相同的 secrets 路径
-                record_url = st.secrets["UNIFIED_ACCOUNT_SYSTEM"]["REDIS_URL"]
-                st.session_state.record_adapter = RedisAdapter(record_url)
-                print("📡 [MAIN] Unified Account System Connected via Secrets")
+            # 定义双语标签
+            bal_label = "资金余额" if st.session_state.lang == "CN" else "Balance"
             
-            adapter = st.session_state.record_adapter
-            
-            # 3. 获取当前登录 UID 并读取
-            target_uid = st.session_state.get('auth_user', 'J').upper()
-            # 注意：使用 adapter 内部封装好的 client (redis.Redis 实例)
-            val = adapter.client.hget(f"u:info:{target_uid}", "balance")
-            
-            if val is not None:
-                display_balance = f"${float(val):,.0f}"
-            else:
-                display_balance = "$0"
+            try:
+                from core.db_adapter import RedisAdapter
                 
-        except Exception as e:
-            # 如果报错，说明 secrets 配置或 RedisAdapter 导入有问题
-            print(f"❌ [MAIN] Balance Sync Error: {e}")
-            display_balance = "CONN_ERR"
+                if 'record_adapter' not in st.session_state:
+                    record_url = st.secrets["UNIFIED_ACCOUNT_SYSTEM"]["REDIS_URL"]
+                    st.session_state.record_adapter = RedisAdapter(record_url)
+                
+                adapter = st.session_state.record_adapter
+                # 从 Redis 获取实时余额
+                val = adapter.client.hget(f"u:info:{current_uid}", "balance")
+                
+                if val is not None:
+                    display_balance = f"${float(val):,.0f}"
+                else:
+                    display_balance = "$0"
+                    
+            except Exception as e:
+                print(f"❌ [MAIN] Balance Sync Error: {e}")
+                display_balance = "CONN_ERR"
 
-        # UI 渲染保持不变
-        st.markdown(f"""
-            <p style="font-size: 10px; color: #666; margin: 0; line-height: 32px;">
-                {L_MAP[st.session_state.lang]['bal']}: 
-                <span style="color: #00FFAA;">{display_balance}</span>
-            </p>
-        """, unsafe_allow_html=True)
+            # 渲染为： 用户名 Balance: $余额
+            st.markdown(f"""
+                <p style="font-size: 12px; margin: 0; line-height: 32px;">
+                    <span style="color: #555;"></span><span style="color: #BBB; font-weight: 600;">{current_uid}</span>
+                    <span style="color: #00FFAA; margin-left: 10px; font-family: monospace;">{display_balance}</span>
+                </p>
+            """, unsafe_allow_html=True)
         
     with col_exit:
         # 2. 显式开启 use_container_width，确保按钮撑满 50% 的列宽
