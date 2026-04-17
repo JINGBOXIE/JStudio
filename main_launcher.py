@@ -248,8 +248,8 @@ with st.sidebar:
     
 # --- 5. 主路由分发 ---
 if st.session_state.menu_choice == "PORTAL":
-    #st.markdown(f"<h2 style='text-align:center; color:#d4af37;'>{L_MAP[st.session_state.lang]['welcome']}</h2>", unsafe_allow_html=True)
-    #st.write("---")
+    st.markdown(f"<h2 style='text-align:center; color:#d4af37;'>{L_MAP[st.session_state.lang]['welcome']}</h2>", unsafe_allow_html=True)
+    st.write("---")
     c1, c2, c3 = st.columns(3)
     if c1.button("iMarket Pro", use_container_width=True, key="p_im"):
         st.session_state.menu_choice = "IMARKET"; st.rerun()
