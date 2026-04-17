@@ -308,6 +308,29 @@ elif st.session_state.menu_choice == "BAC_PRO":
         m_ai.render_ai_vision_tab(st.session_state.lang)
     
 elif st.session_state.menu_choice == "BOOK":
-    st.title("The Great Way, Made Simple")
-    st.info("Philosophical Forum under development.")
+    is_cn = st.session_state.lang == "CN"
+    
+    # 动态文案变量
+    book_title = "The Great Way, Made Simple"
+    # 核心金句 (定稿文案)
+    motto = "生活极简 · 生命极专" if is_cn else "Simple living · Focused being"
+    
+    # 你要求的翻译内容
+    forum_desc = (
+        "由 AI 主导的博弈理论专栏正在开发中，旨在简化复杂人性与社会运行逻辑。" 
+        if is_cn else 
+        "AI-driven Gaming Theory forum under development, designed to simplify complex human nature and social dynamics."
+    )
 
+    # UI 渲染
+    st.subheader(book_title)
+    
+    # 视觉中心：金句
+    st.markdown(f"""
+        <div style='margin: 20px 0px; padding: 15px; border-left: 4px solid #D4AF37; background: rgba(212, 175, 55, 0.05);'>
+            <h2 style='color: #D4AF37; margin: 0; font-size: 1.8rem;'>{motto}</h2>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # 状态提示：受左侧主控按钮控制的双语翻译
+    st.info(forum_desc)

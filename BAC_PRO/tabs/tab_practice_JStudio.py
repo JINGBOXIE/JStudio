@@ -1,6 +1,5 @@
 # ---------------------------------------------------------
-# tab_practice_JStudio.py 
-# -修改这里39行附近max_shoes = 来设定运行多少靴，每个STREAK仅下一注
+# tab_practice_JStudio.py
 # ---------------------------------------------------------
 import streamlit as st
 import os
@@ -10,6 +9,7 @@ import random
 import redis
 import time 
 import json
+import streamlit.components.v1 as components
 # 1. 路径注入
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -74,34 +74,116 @@ def show_recent_bets_dialog():
     except Exception as e:
         st.error(f"Error: {e}")
 
+
+
 @st.dialog("📈 综合报表" if st.session_state.get('lang') == "CN" else "📈 Analytics")
 def show_summary_report_dialog():
     record_adapter = st.session_state.get('record_adapter')
     uid = st.session_state.get('auth_user', "J")
     is_cn = st.session_state.get('lang') == "CN"
+    
+    if not record_adapter:
+        st.error("Redis Error: Adapter not found.")
+        return
 
     try:
         r = record_adapter.client
         tx_ids = r.lrange(f"u:tx_list:{uid}", 0, -1)
+        
         if not tx_ids:
-            st.warning("数据不足" if is_cn else "Insufficient data.")
+            st.info("暂无记录" if is_cn else "No records found.")
             return
 
-        data_list = [r.hgetall(f"tx:{tid}") for tid in tx_ids]
-        df = pd.DataFrame(data_list)
-        df['amount'] = pd.to_numeric(df['amount'], errors='coerce').fillna(0)
+        # 1. 数据映射与标准化 (根据你的 Redis 结构)
+        all_records = []
+        for tid in tx_ids:
+            data = r.hgetall(f"tx:{tid}")
+            if data:
+                all_records.append({
+                    'exec_mode': str(data.get('type', 'N/A')).upper(),
+                    'bet_logic': str(data.get('strategy', 'N/A')).upper(),
+                    'action': str(data.get('action', 'N/A')).upper(),
+                    'hist_len': f"LEN-{data.get('hist_len', '0')}",
+                    'bet_len': f"STREAK-{data.get('bet_len', '0')}",
+                    'amount': float(data.get('amount', 0))
+                })
+        
+        df = pd.DataFrame(all_records)
 
-        # 报表头部
-        c1, c2 = st.columns(2)
-        c1.metric("总盈亏" if is_cn else "Total Net", f"${df['amount'].sum():,.2f}")
-        c2.metric("总单数" if is_cn else "Total Bets", len(df))
-        
-        # 累计收益图
-        st.markdown("---")
-        st.line_chart(df['amount'].iloc[::-1].cumsum())
+        # 2. 核心计算
+        def get_metrics(filter_col=None, filter_val=None):
+            subset = df if filter_col is None else df[df[filter_col] == filter_val]
+            count = len(subset)
+            vol = subset['amount'].abs().sum() if count > 0 else 0.0
+            pl = subset['amount'].sum() if count > 0 else 0.0
+            avg = pl / count if count > 0 else 0.0
+            return count, vol, pl, avg
+
+        # 3. 动态生成表格行
+        def build_rows(cat_label, col):
+            rows = ""
+            unique_vals = sorted(df[col].unique())
+            for i, val in enumerate(unique_vals):
+                cnt, vol, pl, avg = get_metrics(col, val)
+                color = "#00FFAA" if pl >= 0 else "#FF4B4B"
+                rows += f"""
+                <tr style="border-bottom: 1px solid #222;">
+                    <td style="padding:10px; color:#BBB; font-weight:bold;">{cat_label if i==0 else ""}</td>
+                    <td style="color:#888;">{val}</td>
+                    <td style="text-align:center;">{cnt}</td>
+                    <td style="text-align:right;">${vol:,.2f}</td>
+                    <td style="text-align:right; color:{color}; font-weight:bold;">${pl:,.2f}</td>
+                    <td style="text-align:right;">${avg:,.2f}</td>
+                </tr>"""
+            return rows
+
+        # 4. 构建完整的 HTML 页面代码
+        # 强制使用独立 CSS，避免 Streamlit 干扰
+        html_content = f"""
+        <div style="background:#111; padding:15px; border-radius:10px; color:#EEE; font-family: monospace; font-size: 13px;">
+            <table style="width:100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 2px solid #444; color: #777; text-align: left;">
+                        <th style="padding:10px;">Category</th>
+                        <th>Grouping</th>
+                        <th style="text-align:center;">Count</th>
+                        <th style="text-align:right;">Total Vol.</th>
+                        <th style="text-align:right;">Net P/L</th>
+                        <th style="text-align:right;">Avg. P/L</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {build_rows("Exec Mode", "exec_mode")}
+                    {build_rows("Bet Logic", "bet_logic")}
+                    {build_rows("Action", "action")}
+                    {build_rows("Snapshot Depth", "hist_len")}
+                    {build_rows("Betting Point", "bet_len")}
+                </tbody>
+                <tfoot>
+                    <tr style="background: rgba(255,255,255,0.1); font-weight: bold;">
+                        <td colspan="2" style="padding:12px; color:#FFF;">SUMMARY OVERALL</td>
+                        <td style="text-align:center;">{get_metrics()[0]}</td>
+                        <td style="text-align:right;">${get_metrics()[1]:,.2f}</td>
+                        <td style="text-align:right; color:#00FFAA;">${get_metrics()[2]:,.2f}</td>
+                        <td style="text-align:right;">${get_metrics()[3]:,.2f}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        """
+
+        # 5. 唯一渲染出口：使用 HTML 组件锁定显示效果
+        # 设置足够的高度以避免滚动条
+        components.html(html_content, height=600, scrolling=True)
+
     except Exception as e:
-        st.error(f"Error: {e}")
-        
+        st.error(f"Render Error: {e}")
+
+    # 6. 交互按钮
+    if st.button("CLOSE", use_container_width=True):
+        st.session_state.menu_choice = "GAMING LOGIC"
+        st.rerun()
+            
 def render_practice_tab(lang):
     # --- 1. 初始化变量 ---
     if 'bet_input_red' not in st.session_state: st.session_state.bet_input_red = 0
