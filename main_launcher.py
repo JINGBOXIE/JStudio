@@ -85,7 +85,7 @@ L_MAP = {
         "exit": "EXIT", 
         "bal": "J Balance", 
         "back": "PORTAL",
-        "welcome": "SIMPLICITY ➕ FOCUS", 
+        "welcome": "J STUDIO ◈ SIMPLICITY ◈ FOCUS", 
         "select": "Select Functional Engine from sidebar",
         # 新增以下三行
         "nav_im": "iMarket - AI ENGINE", 
