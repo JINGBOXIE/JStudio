@@ -289,31 +289,30 @@ def render_practice_tab(lang):
      
         
     def handle_deal_click():
-        # A. 余额不足拦截：如果当前余额连最低 100 都没有，拒绝发牌
+        # 0. 初始状态重置
+        is_ai_match = False
+        current_action = None
+        
+        # A. 余额不足拦截
         if st.session_state.balance < 100:
+            is_cn = st.session_state.get('lang') == "CN"
             msg = "余额不足，发牌停止。" if is_cn else "Insufficient balance, dealing stopped."
             st.warning(msg)
-            st.session_state.auto_run_active = False # 强制关闭自动运行
+            st.session_state.auto_run_active = False 
             return
-        
+            
         if 'styled_results' not in st.session_state: st.session_state.styled_results = []
         if 'clean_results' not in st.session_state: st.session_state.clean_results = []
-        # --- 1. 确保 Redis 适配器已初始化 (双库并行) ---
-        # 必须放在最前面，确保后面的查询和写入都能拿到对象
+
+        # --- 1. Redis 初始化 ---
         if 'redis_adapter' not in st.session_state or 'record_adapter' not in st.session_state:
             try:
-                # 策略库 (BACC_PRO_PROD)
                 prod_url = st.secrets["BACC_PRO_PROD"]["REDIS_URL"]
                 st.session_state.redis_adapter = RedisAdapter(prod_url)
-                
-                # 记录库 (UNIFIED_ACCOUNT_SYSTEM)
                 record_url = st.secrets["UNIFIED_ACCOUNT_SYSTEM"]["REDIS_URL"]
                 st.session_state.record_adapter = RedisAdapter(record_url)
-                
-                print(f"📡 [DEBUG] Redis Dual-Link Initialized: PROD & TEST")
             except Exception as e:
                 st.error(f"Redis 初始化失败: {e}")
-                
 
         bet_b = st.session_state.get("bet_input_red", 0)
         bet_p = st.session_state.get("bet_input_blue", 0)
@@ -322,89 +321,122 @@ def render_practice_tab(lang):
 
         if total_bet <= st.session_state.balance:
             try:
-                raw_road_snapshot = list(st.session_state.clean_results)
-                is_ai_match = False
-                current_action = None 
-                adapter = st.session_state.get('redis_adapter')
-                h_min = st.session_state.get('hist_min', 3)
+                # --- 2. 锁定发牌前的快照 ---
+                pre_deal_seq = list(st.session_state.get('clean_results', []))
+                pre_cur_side = pre_deal_seq[-1] if pre_deal_seq else None
+                pre_cur_len = 0
+                if pre_cur_side:
+                    for x in reversed(pre_deal_seq):
+                        if x == pre_cur_side: pre_cur_len += 1
+                        else: break
                 
-                if adapter and raw_road_snapshot:
-                    components = get_fp_components(raw_road_snapshot, h_min=h_min)
+                # 记录下注瞬间的连开长度
+                betting_moment_len = pre_cur_len
+
+                # --- 3. 物理发牌 [BACKEND-3] ---
+                # 先出结果，才能判定“包含了这一手”的形态是否匹配 1B 数据库
+                oc = st.session_state.dealer.deal_one_hand(st.session_state.shoe)
+                st.session_state.last_outcome_obj = oc
+                res = oc.winner
+                print(f"\n[BACKEND-3] 🃏 物理发牌结果: {res}")
+
+                # --- 4. 结算 ---
+                new_bal, net_profit, _ = settle_hand(res, current_bets, st.session_state.balance)
+                st.session_state.balance = new_bal
+
+                # --- 5. AI 决策判定 (基于包含 res 的完整序列) ---
+                adapter = st.session_state.get('redis_adapter')
+                h_min = st.session_state.get('h_min_slider', 3) 
+                
+                if adapter and res in ['B', 'P']:
+                    # 核心：构造包含当前结果的完整样板
+                    current_full_seq = pre_deal_seq + [res]
+
+                    # === 【关键修复：在此处立即定义变量，防止下方 print 报错】 ===
+                    hash_depth = len(current_full_seq)
+                    hash_seq_str = "".join(current_full_seq[-12:])
+
+                    components = get_fp_components(current_full_seq, h_min=h_min)
                     state_hash = generate_fp_hash(*components)
+
+                    # [BACKEND-2] 执行比对：判定当前形态是否为机会点
                     decision = adapter.get_state_decision(state_hash)
                     if decision:
                         is_ai_match = True
+                        # 仅在后台打印，不使用 st.balloons() 以防白屏
                         raw_val = str(decision.get('action', '')).upper()
                         if "CU" in raw_val or raw_val == "C": current_action = "C"
                         elif "CO" in raw_val or raw_val == "S": current_action = "S"
                         else: current_action = "?"
+                    else:
+                        print(f"[BACKEND-2] ⚪ NO MATCH")
 
-                # 执行发牌逻辑
-                oc = st.session_state.dealer.deal_one_hand(st.session_state.shoe)
-                st.session_state.last_outcome_obj = oc
+                # --- 6. 判定渲染长度 [BACKEND-4] ---
+                marked_len_for_ui = 0
+                if res in ['B', 'P']:
+                    if betting_moment_len > 0 and res == pre_deal_seq[-1]:
+                        marked_len_for_ui = betting_moment_len + 1
+                    else:
+                        marked_len_for_ui = 1
                 
-                # 结算与更新状态
-                new_bal, net_profit, _ = settle_hand(oc.winner, current_bets, st.session_state.balance)
-                st.session_state.balance = new_bal
-                
-                # --- 🚀 核心修改：同步到 Redis 库流水账 ---
+                # --- 7. 写入 Redis 存证 [BACKEND-5] ---
                 record_writer = st.session_state.get('record_adapter')
                 if record_writer and total_bet > 0:
                     try:
-                        # A. 获取动态 ID 和 Name (解决登录实际身份问题)
                         target_uid = st.session_state.get('auth_user', "J")
                         target_uname = st.session_state.get('username', f"User_{target_uid}")
-
-                        # B. 计算真实的物理连开长度 (CUR_LEN)
-                        clean_seq = st.session_state.get('clean_results', [])
-                        cur_side = clean_seq[-1] if clean_seq else None
-                        cur_len = 0
-                        for x in reversed(clean_seq):
-                            if x == cur_side: cur_len += 1
-                            else: break
-
-                        # C. 映射动作
                         act_map = {"C": "CUT", "S": "CONTINUE"}
                         act = act_map.get(current_action, "MANUAL")
 
-                        # D. 写入 Redis (注意：补齐了 username 以修复 TypeError)
                         record_writer.record_app_transaction(
                             user_id=target_uid,             
-                            username=target_uname,      # 必须参数
+                            username=target_uname,      
                             amount=net_profit,       
                             tx_type="AUTORUN" if st.session_state.auto_run_active else "DEAL",
                             strategy=st.session_state.get('strategy_mode', "V8_AUTO"), 
-                            hist_len=st.session_state.get('h_min_slider', 0), 
-                            bet_len=cur_len,            # 修正后的下注瞬间长度
+                            hist_len=h_min, 
+                            bet_len=betting_moment_len, 
                             action=act  
                         )
+                        print(f"[BACKEND-5] 📝 DB存证 | BetLen: {betting_moment_len} | 结果: {res}")
                     except Exception as e:
                         print(f"Redis Sync Error: {e}")
-                
+
+                # --- 8. 更新统计与路单渲染池 ---
                 st.session_state.rank_counts, st.session_state.stats = update_shoe_stats(oc, st.session_state.rank_counts, st.session_state.stats)
-
-                st.session_state.results.append(oc.winner)
-                bet_res = "win" if net_profit > 0 else "loss" if total_bet > 0 and oc.winner != 'T' else None
-                st.session_state.styled_results.append({"v": oc.winner, "m": is_ai_match, "r": bet_res, "action": current_action})
+                st.session_state.results.append(res)
                 
-                # 更新纯净路图 (只记录 B/P)
-                if oc.winner in ['B', 'P']: 
-                    st.session_state.clean_results.append(oc.winner)
+                bet_res = "win" if net_profit > 0 else "loss" if total_bet > 0 and res != 'T' else None
+                
+                # 渲染压入：is_ai_match 此时已完成针对当前 res 的精确校准
+                st.session_state.styled_results.append({
+                    "v": res,
+                    "m": is_ai_match, 
+                    "r": marked_len_for_ui if res != 'T' else bet_res,
+                    "action": current_action
+                })
 
-                # --- 🎯 核心整合：在此处插入解锁逻辑 ---
-                clean_seq = st.session_state.clean_results
-                if len(clean_seq) >= 2:
-                    # 如果结果变了（跳路），则解锁
-                    if clean_seq[-1] != clean_seq[-2]:
+                # --- 9. 物理序列入库 ---
+                if res in ['B', 'P']: 
+                    st.session_state.clean_results.append(res)
+                    print(f"[BACKEND-6] ✅ 序列更新完毕 | 新总长度: {len(st.session_state.clean_results)}")
+
+                # --- 10. 解锁逻辑 ---
+                current_seq = st.session_state.get('clean_results', [])
+                if len(current_seq) >= 2:
+                    if current_seq[-1] != current_seq[-2]:
                         st.session_state.streak_bet_locked = False
+                        if 'last_bet_processed' in st.session_state:
+                            st.session_state.last_bet_processed = False 
                 else:
-                    # 靴头第一手总是解锁状态
                     st.session_state.streak_bet_locked = False
+                    st.session_state.last_bet_processed = False
 
                 if total_bet > 0:
-                    st.session_state.bet_history.append({"hand_no": len(st.session_state.results), "winner": oc.winner, "net": net_profit})
+                    if 'bet_history' not in st.session_state: st.session_state.bet_history = []
+                    st.session_state.bet_history.append({"hand_no": len(st.session_state.results), "winner": res, "net": net_profit})
                 
-                # 下注输入框归零
+                # 清零
                 st.session_state.bet_input_red = 0
                 st.session_state.bet_input_blue = 0
 
@@ -480,7 +512,7 @@ def render_practice_tab(lang):
                 
                 # 视觉反馈: 仅在发现新指纹信号时放气球
                 if st.session_state.get("last_balloon_hash") != state_hash:
-                    st.balloons()
+                    #st.balloons()
                     st.session_state.last_balloon_hash = state_hash
         
     with st.sidebar:
@@ -545,9 +577,6 @@ def render_practice_tab(lang):
             </div>
         """, unsafe_allow_html=True)
 
-        # --- 🛠️ 关键修改点：移除 key 绑定，改用变量赋值 ---
-        # 只有这样做，handle_deal_click 里的 st.session_state.bet_input_red = 0 才能生效而不报错
-        # --- 🛠️ 必须这样写：去掉 key 参数，改用变量接收返回值 ---
 
         st.session_state.bet_input_red = st.number_input(
             "B", # 这个 Label 必须保留，供下方 CSS 选择器识别
@@ -604,7 +633,7 @@ def render_practice_tab(lang):
         </style>
         """, unsafe_allow_html=True)
         # --- 5.D 物理输入框区 ---
-        sb2, sb1 = st.columns(2)
+        #sb2, sb1 = st.columns(2)
         # 这里的 "B" 和 "P" 是 CSS 识别的关键钥匙
         #bet_b = sb1.number_input("B", min_value=0, step=100, key="bet_input_red")
         #bet_p = sb2.number_input("P", min_value=0, step=100, key="bet_input_blue")
@@ -837,6 +866,7 @@ def render_practice_tab(lang):
 
         # 5. 状态与颜色渲染逻辑
         if decision:
+            #st.balloons()
             # 从新函数返回的对象中提取字段
             ev_p_txt = f"{decision['ev_cont']*100:+.2f}%"
             ev_b_txt = f"{decision['ev_cut']*100:+.2f}%"
@@ -915,7 +945,7 @@ def render_practice_tab(lang):
                         })
                         # 触发特效
                         if st.session_state.get("last_balloon_hash") != state_hash:
-                            st.balloons()
+                            #st.balloons()
                             if decision["edge"] > 0.01: st.snow()
                             st.session_state.last_balloon_hash = state_hash
                     else:
@@ -976,5 +1006,6 @@ def render_practice_tab(lang):
             time.sleep(0.1) # 增加微小延迟防止 UI 渲染过载
             run_auto_engine()
             st.rerun()
+
 
 
