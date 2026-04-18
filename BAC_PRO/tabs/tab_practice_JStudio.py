@@ -421,22 +421,20 @@ def render_practice_tab(lang):
                     st.session_state.clean_results.append(res)
                     print(f"[BACKEND-6] ✅ 序列更新完毕 | 新总长度: {len(st.session_state.clean_results)}")
 
-                # --- 10. 解锁逻辑 ---
-                current_seq = st.session_state.get('clean_results', [])
-                if len(current_seq) >= 2:
-                    if current_seq[-1] != current_seq[-2]:
+                # --- 🎯 核心整合：在此处插入解锁逻辑 ---
+                clean_seq = st.session_state.clean_results
+                if len(clean_seq) >= 2:
+                    # 如果结果变了（跳路），则解锁
+                    if clean_seq[-1] != clean_seq[-2]:
                         st.session_state.streak_bet_locked = False
-                        if 'last_bet_processed' in st.session_state:
-                            st.session_state.last_bet_processed = False 
                 else:
+                    # 靴头第一手总是解锁状态
                     st.session_state.streak_bet_locked = False
-                    st.session_state.last_bet_processed = False
 
                 if total_bet > 0:
-                    if 'bet_history' not in st.session_state: st.session_state.bet_history = []
-                    st.session_state.bet_history.append({"hand_no": len(st.session_state.results), "winner": res, "net": net_profit})
+                    st.session_state.bet_history.append({"hand_no": len(st.session_state.results), "winner": oc.winner, "net": net_profit})
                 
-                # 清零
+                # 下注输入框归零
                 st.session_state.bet_input_red = 0
                 st.session_state.bet_input_blue = 0
 
@@ -454,7 +452,7 @@ def render_practice_tab(lang):
         b_len = st.session_state.get('bet_len_slider_input', 1)
         # 统一内部策略标识，不受语言切换影响
         is_single_mode = "单注" in st.session_state.strategy_mode or "Single" in st.session_state.strategy_mode
-        
+        is_single_mode = (st.session_state.strategy_mode == "ONE BET")
         clean_seq = st.session_state.get('clean_results', [])
         if not clean_seq:
             return
@@ -578,6 +576,10 @@ def render_practice_tab(lang):
         """, unsafe_allow_html=True)
 
 
+        # --- 🛠️ 关键修改点：移除 key 绑定，改用变量赋值 ---
+        # 只有这样做，handle_deal_click 里的 st.session_state.bet_input_red = 0 才能生效而不报错
+        # --- 🛠️ 必须这样写：去掉 key 参数，改用变量接收返回值 ---
+
         st.session_state.bet_input_red = st.number_input(
             "B", # 这个 Label 必须保留，供下方 CSS 选择器识别
             value=float(st.session_state.get('bet_input_red', 0)),
@@ -593,7 +595,6 @@ def render_practice_tab(lang):
             format="%.0f",
             key=None # 显式设为 None 或直接不写 key 参数
         )
-
         # --- 5.C 核心样式注入 (CSS 逻辑保持不变) ---
         st.markdown("""
         <style>
@@ -999,13 +1000,11 @@ def render_practice_tab(lang):
 
             html += '</div>'
             st.markdown(html, unsafe_allow_html=True)
-    # --- 底部循环点火器 (解决靴末停滞) ---
+     # --- 底部循环点火器 (解决靴末停滞) ---
     if st.session_state.get('auto_run_active', False):
         # 只要下注框已清零（表示上一手处理完），就自动执行下一手
         if st.session_state.bet_input_red == 0 and st.session_state.bet_input_blue == 0:
             time.sleep(0.1) # 增加微小延迟防止 UI 渲染过载
             run_auto_engine()
             st.rerun()
-
-
 
