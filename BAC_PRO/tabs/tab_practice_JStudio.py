@@ -185,6 +185,21 @@ def show_summary_report_dialog():
         st.rerun()
             
 def render_practice_tab(lang):
+    # --- 1. 全量变量保底初始化 (防止 AttributeError) ---
+    initial_keys = {
+        'results': [], 'clean_results': [], 'styled_results': [],
+        'shoe': [], 'cut_card_at': 14, 'shoe_count': 0, 'balance': 0.0,
+        'stats': {"B": 0, "P": 0, "T": 0}, 'end_shoe': False,
+        'auto_run_active': False, 'strategy_mode': "Single Bet"
+    }
+    for key, val in initial_keys.items():
+        if key not in st.session_state:
+            st.session_state[key] = val
+
+    # 定义常量约束
+    MAX_SHOES = 1000
+    is_cn = lang == "CN"
+
     # --- 1. 初始化变量 ---
     if 'bet_input_red' not in st.session_state: st.session_state.bet_input_red = 0
     if 'bet_input_blue' not in st.session_state: st.session_state.bet_input_blue = 0
@@ -236,6 +251,19 @@ def render_practice_tab(lang):
         handle_deal_click()
     
     def reset_logic():
+        # A. 检查靴数上限
+        if st.session_state.shoe_count >= MAX_SHOES:
+            msg = f"已达到最大练习靴数 ({MAX_SHOES})。" if is_cn else f"Max shoes reached ({MAX_SHOES})."
+            st.error(msg)
+            st.stop()
+            return
+
+        # B. 检查余额 (新靴开始前必须校验)
+        if st.session_state.balance < 100:
+            msg = "余额不足，无法开启新靴。" if is_cn else "Insufficient balance for new shoe."
+            st.error(msg)
+            st.stop()
+            return
         if 'factory' not in st.session_state:
             st.session_state.factory = ShoeFactory()
         st.session_state.shoe = st.session_state.factory.create_shoe()
@@ -251,15 +279,23 @@ def render_practice_tab(lang):
         st.session_state.last_fp_advice = {"match": False, "fp_id": "READY", "action": "WAIT"}
         st.session_state.streak_bet_locked = False
 
+
     if 'bac_pro_v8_final' not in st.session_state:
         st.session_state.dealer = BaccaratDealer()
         st.session_state.factory = ShoeFactory(decks=8)
-        st.session_state.balance = 10000.0
+        st.session_state.balance = 10000000.0
         reset_logic()
         st.session_state.bac_pro_v8_final = True
      
         
     def handle_deal_click():
+        # A. 余额不足拦截：如果当前余额连最低 100 都没有，拒绝发牌
+        if st.session_state.balance < 100:
+            msg = "余额不足，发牌停止。" if is_cn else "Insufficient balance, dealing stopped."
+            st.warning(msg)
+            st.session_state.auto_run_active = False # 强制关闭自动运行
+            return
+        
         if 'styled_results' not in st.session_state: st.session_state.styled_results = []
         if 'clean_results' not in st.session_state: st.session_state.clean_results = []
         # --- 1. 确保 Redis 适配器已初始化 (双库并行) ---
@@ -477,7 +513,7 @@ def render_practice_tab(lang):
         # C. 频率切换 (strategy_mode)
         selected_strat = st.sidebar.selectbox(label=label_strat, options=strat_options)
         # 内部逻辑统一映射为中文标识，方便后端判断
-        st.session_state.strategy_mode = "单注 (Streak-1)" if ("单注" in selected_strat or "Single" in selected_strat) else "连注 (Always)"
+        st.session_state.strategy_mode = "ONE BET" if ("单注" in selected_strat or "Single" in selected_strat) else "MUTI BET"
         
 # --- 5.A 顶部：下注区分割线 (保持不变) ---
         divider_text = "BETTING ZONE" if st.session_state.lang == "EN" else "下注区"
@@ -637,6 +673,11 @@ def render_practice_tab(lang):
         with c2:
             if st.button(lt.get("btn_new_shoe"), use_container_width=True):
                 reset_logic()
+                # --- 3 FREE HANDS ---
+                handle_deal_click()
+                handle_deal_click()
+                handle_deal_click()
+                
                 st.rerun()
 
         with c3:
