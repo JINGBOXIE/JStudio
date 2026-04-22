@@ -72,6 +72,9 @@ def render_imarket_sidebar(lang):
                 key="ticker_input_val"
             ).upper()
 
+        # 加拿大股票检测
+    if ".TO" in ticker_input or ".V" in ticker_input:
+        st.success("🇨🇦 Canada Market")
     with col_pop:
         st.write("##")
         with st.popover(">>", help="Quick Watchlist"):
@@ -82,7 +85,9 @@ def render_imarket_sidebar(lang):
                 if pop_container.button(f"**{symbol}** | {names[name_idx]}", key=f"pop_{symbol}", use_container_width=True):
                     st.session_state["ticker_input_val"] = symbol
                     st.rerun()
-    st.markdown("---")
+        # 4. 回溯周期滑块
+    lb_label = "Lookback Period (Divergence)" if report_lang == "English" else "回溯周期 (背离分析)"
+    lookback = st.slider(lb_label, 30, 250, 90, key="lookback_val")
         # 4. 分析按钮与逻辑
     btn_label = "🚀 Real-time Macro Analysis" if report_lang == "English" else "🚀 实时财经综合分析"
     btn_help = "Activating V3.3 Engine" if report_lang == "English" else "调用 iMarket V3.3 决策引擎"
@@ -104,16 +109,9 @@ def render_imarket_sidebar(lang):
             report_md = analyst.generate_strategic_report()
             analyst.display_report(report_md)
 
-        # 4. 回溯周期滑块
-    lb_label = "Lookback Period (Divergence)" if report_lang == "English" else "回溯周期 (背离分析)"
-    lookback = st.slider(lb_label, 30, 250, 90, key="lookback_val")
 
-        # 加拿大股票检测
-    if ".TO" in ticker_input or ".V" in ticker_input:
-        st.success("🇨🇦 Canada Market")
-    
-        # --- 6. 页脚版本信息 ---
-    #st.markdown("---")
+
+
         
         
         
