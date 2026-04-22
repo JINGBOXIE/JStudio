@@ -1,40 +1,51 @@
 import streamlit as st
 import os
 import sys
-import time
 import google.generativeai as genai
 from PIL import Image
-from core.snapshot_engine import get_fp_components
-from core.db_adapter import RedisAdapter, generate_fp_hash
-# 1. 路径与环境注入
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(BASE_DIR)
+
+# 1. 动态注入根目录路径 (确保能找到 core)
+# 假设 tab_ai_vision.py 位于 JStudio/BAC_PRO/modules/ 下
+# 需要向上移动两层到达 JStudio 根目录
+CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.abspath(os.path.join(CURRENT_FILE_DIR, "../../"))
+
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from core.constants import AI_VISION_ROLE_PROMPT
-from core.snapshot_engine import get_fp_components
-from core.db_adapter import RedisAdapter, generate_fp_hash
-from core.ai_config import ai_manager
-from PIL import Image
+# 2. 现在可以统一导入
+try:
+    from core.ai_config import ai_manager
+    from core.constants import AI_VISION_ROLE_PROMPT
+    from core.snapshot_engine import get_fp_components
+    from core.db_adapter import RedisAdapter, generate_fp_hash
+except ImportError as e:
+    st.error(f"核心模块导入失败，请检查目录结构: {e}")
 
-
+# 3. 核心调用函数
 def call_vision_ai(image_file, prompt_text):
-    """
-    AI 视觉识别核心函数：
-    1. 通过统一管理器 ai_manager 获取配置与模型名 (锁定 2.5 付费版)
-    2. 执行高精度视觉分析
-    3. 执行深度清洗，输出纯净序列数据
-    """
-    # 【KPI 统一管理】直接获取配置后的模型名及状态
+    # 统一使用 ai_manager 获取付费版 2.5 引擎配置
     model_name, status = ai_manager.configure_engine()
     
     if status != "SUCCESS":
         return f"AI Engine Error: {status}"
-        
+    
     try:
-        # 初始化统一分配的模型
         model = genai.GenerativeModel(model_name)
+        if hasattr(image_file, 'seek'):
+            image_file.seek(0)
+        img = Image.open(image_file)
+        
+        response = model.generate_content([prompt_text, img])
+        
+        if response and response.text:
+            # 此处保留之前建议的深度清洗逻辑...
+            return response.text.strip()
+        return "ERROR: Empty Response"
+    except Exception as e:
+        return f"AI Logic Error: {str(e)}"
+    
+
         
         # 1. 确保图片指针在起始位置（防止 Streamlit 多次读取导致空字节流）
         if hasattr(image_file, 'seek'):

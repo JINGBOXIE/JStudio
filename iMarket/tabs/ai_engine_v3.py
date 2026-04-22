@@ -3,17 +3,31 @@ import streamlit as st
 import re
 import os
 import datetime
+import sys
 
-# 1. 自动获取 Key：优先从云端 Secrets 读取，本地则尝试环境变量
-api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
 
-if api_key:
-    genai.configure(api_key=api_key)
-    # 2. 核心修正：锁定为你测试通过的 2.5 模型名称
-    # 这样可以避免之前遇到的 400 (模型停用) 或 404 错误
-    DEFAULT_MODEL_NAME = "gemini-2.5-flash" 
-else:
-    st.warning("⚠️ JStudio 引擎未检测到有效 API Key，请检查 Cloud Secrets 配置。")
+# 注入根目录
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+from core.ai_config import ai_manager
+
+def run_v3_specialized_report(ticker, segment, data_payload, lang="中文"):
+    # 同样调用管理器的统一 KPI 逻辑
+    model_name, status = ai_manager.configure_engine()
+    
+    
+    if status != "SUCCESS":
+        print(f"AI 配置失败: {status}")
+        return None
+    
+    model = genai.GenerativeModel(model_name)
+    # ... 后续逻辑保持不变
+    
+
+
     
 # 启用缓存：保护付费用户配额，避免重复请求
 @st.cache_data(ttl=3600, show_spinner=False)
