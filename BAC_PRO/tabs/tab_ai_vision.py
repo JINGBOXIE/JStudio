@@ -23,32 +23,32 @@ GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY")
 
 def call_vision_ai(image_file, prompt_text):
     """
-    AI 视觉识别核心函数：使用全局 Secrets 配置并执行 Gemini 视觉分析
+    AI 视觉识别核心函数：确保与 iMarket 同样的 Key 读取逻辑
     """
     try:
-        # 验证全局 Key 是否存在
-        if not GOOGLE_API_KEY:
+        # 1. 核心修复：使用与 iMarket 一致的多重检测逻辑
+        api_key = st.secrets.get("GOOGLE_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+        
+        if not api_key:
             return "ERROR: GOOGLE_API_KEY not found"
             
-        # 🚀 强力清洗：去除所有可能的换行符、空格及隐藏字符
-        api_key_clean = GOOGLE_API_KEY.strip().replace("\n", "").replace("\r", "")
-        
-        # 配置 Google AI 引擎
+        # 🚀 强力清洗：确保没有换行符干扰
+        api_key_clean = str(api_key).strip().replace("\n", "").replace("\r", "")
         genai.configure(api_key=api_key_clean)
         
-        # 2. 动态寻找可用模型 (解决模型版本更新导致的 404 问题)
-        # 默认保底模型
-        final_model_name = "gemini-2.5-flash"  # 默认保底模型修改为 2.5
+        # 2. 统一版本：优先调用你测试成功的付费最新版 2.5
+        # 这样可以解决之前识别点数过少的问题
+        final_model_name = "gemini-2.5-flash" 
         candidates = [
-            'gemini-2.5-flash',        # 优先级 1：你昨天测试成功的付费最新版
-            'gemini-1.5-flash-latest', # 优先级 2：1.5 的最新补丁版
-            'gemini-1.5-flash-002',    # 优先级 3：1.5 的最新稳定版
-            'gemini-1.5-flash'         # 优先级 4：基础版
+            'gemini-2.5-flash',        # 优先级最高：付费最新版
+            'gemini-1.5-flash-latest', 
+            'gemini-1.5-flash-002',
+            'gemini-1.5-flash'
         ]
+        
+        # 尝试验证模型可用性
         try:
-            # 获取当前 API Key 权限下真实可用的模型列表
             available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            
             model_found = False
             for cand in candidates:
                 for am in available_models:
@@ -57,13 +57,9 @@ def call_vision_ai(image_file, prompt_text):
                         model_found = True
                         break
                 if model_found: break
-            
-            # 如果候选名单都没匹配上，但列表不为空，取第一个
-            if not model_found and available_models:
-                final_model_name = available_models[0]
-        except Exception:
-            # 即使列出模型失败（如网络波动或权限限制），仍尝试使用保底名称直接初始化
-            pass
+        except:
+            pass # 如果获取列表失败，直接用 gemini-2.5-flash 硬闯
+        
 
         # 3. 初始化模型并执行识别
         model = genai.GenerativeModel(final_model_name)
