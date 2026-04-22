@@ -15,71 +15,45 @@ if ROOT_DIR not in sys.path:
 from core.constants import AI_VISION_ROLE_PROMPT
 from core.snapshot_engine import get_fp_components
 from core.db_adapter import RedisAdapter, generate_fp_hash
+from core.ai_config import ai_manager
+from PIL import Image
 
-
-# --- 1. 模块级配置：在应用启动时立即获取 Key ---
-# 将获取逻辑移出函数内部，确保全局可用并提高检测优先级
-GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY")
 
 def call_vision_ai(image_file, prompt_text):
     """
-    AI 视觉识别核心函数：确保与 iMarket 同样的 Key 读取逻辑
+    AI 视觉识别核心函数：
+    1. 通过统一管理器 ai_manager 获取配置与模型名 (锁定 2.5 付费版)
+    2. 执行高精度视觉分析
+    3. 执行深度清洗，输出纯净序列数据
     """
+    # 【KPI 统一管理】直接获取配置后的模型名及状态
+    model_name, status = ai_manager.configure_engine()
+    
+    if status != "SUCCESS":
+        return f"AI Engine Error: {status}"
+        
     try:
-        # 1. 核心修复：使用与 iMarket 一致的多重检测逻辑
-        api_key = st.secrets.get("GOOGLE_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+        # 初始化统一分配的模型
+        model = genai.GenerativeModel(model_name)
         
-        if not api_key:
-            return "ERROR: GOOGLE_API_KEY not found"
-            
-        # 🚀 强力清洗：确保没有换行符干扰
-        api_key_clean = str(api_key).strip().replace("\n", "").replace("\r", "")
-        genai.configure(api_key=api_key_clean)
-        
-        # 2. 统一版本：优先调用你测试成功的付费最新版 2.5
-        # 这样可以解决之前识别点数过少的问题
-        final_model_name = "gemini-2.5-flash" 
-        candidates = [
-            'gemini-2.5-flash',        # 优先级最高：付费最新版
-            'gemini-1.5-flash-latest', 
-            'gemini-1.5-flash-002',
-            'gemini-1.5-flash'
-        ]
-        
-        # 尝试验证模型可用性
-        try:
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            model_found = False
-            for cand in candidates:
-                for am in available_models:
-                    if cand in am:
-                        final_model_name = am
-                        model_found = True
-                        break
-                if model_found: break
-        except:
-            pass # 如果获取列表失败，直接用 gemini-2.5-flash 硬闯
-        
-
-        # 3. 初始化模型并执行识别
-        model = genai.GenerativeModel(final_model_name)
-        
-        # 确保图片指针在起始位置（如果是从 Streamlit 组件多次读取）
+        # 1. 确保图片指针在起始位置（防止 Streamlit 多次读取导致空字节流）
         if hasattr(image_file, 'seek'):
             image_file.seek(0)
             
         img = Image.open(image_file)
+        
+        # 2. 调用 Gemini 2.5 引擎执行识别
         response = model.generate_content([prompt_text, img])
         
-        # 4. 深度清洗返回文本
-        # 移除 Markdown 代码块标记、多余空格及特定的 "text" 标识符
+        # 3. 深度清洗逻辑 (保留功能完整性)
         if response and response.text:
             clean_text = response.text.strip()
-            # 循环移除可能存在的包裹标记
+            
+            # 循环移除 Markdown 包裹标记 (如 ```json 或 ```text)
             while clean_text.startswith("```") or clean_text.endswith("```"):
                 clean_text = clean_text.strip("`").strip()
             
-            # 移除开头可能的 "text" 字符串（某些版本模型会自带）
+            # 移除模型可能自带的 "text" 前缀标识
             if clean_text.lower().startswith("text"):
                 clean_text = clean_text[4:].strip()
                 
@@ -88,7 +62,7 @@ def call_vision_ai(image_file, prompt_text):
             return "ERROR: AI returned an empty response"
             
     except Exception as e:
-        # 捕获所有异常并返回友好错误提示
+        # 捕获异常，并返回详细的错误日志
         return f"Error during AI analysis: {str(e)}"
 
 def render_ai_vision_tab(lang):
