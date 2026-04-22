@@ -197,7 +197,7 @@ def render_practice_tab(lang):
             st.session_state[key] = val
 
     # 定义常量约束
-    MAX_SHOES = 1000
+    MAX_SHOES = 10000
     is_cn = lang == "CN"
 
     # --- 1. 初始化变量 ---

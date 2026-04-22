@@ -94,6 +94,16 @@ def render_imarket_sidebar(lang):
             report_md = analyst.generate_content(index_data)
             analyst.display_report(report_md)
 
+    # 2. 【新增】调用你刚才添加的 generate_strategic_report 方法
+    strat_btn_label = "🌐 Strategic Report" if report_lang == "English" else "🌐 跨周期战略透视报告"
+    if st.button(strat_btn_label, key="btn_strategic_v4", use_container_width=True):
+        with st.spinner("Executing Stage 1-4 Analysis..."):
+            # 重新实例化确保加载最新方法
+            analyst = MarketAnalyst(watchlist_data=WATCHLIST_DATA, report_lang=report_lang)
+            # 🚀 这里是关键调用点
+            report_md = analyst.generate_strategic_report()
+            analyst.display_report(report_md)
+
         # 4. 回溯周期滑块
     lb_label = "Lookback Period (Divergence)" if report_lang == "English" else "回溯周期 (背离分析)"
     lookback = st.slider(lb_label, 30, 250, 90, key="lookback_val")

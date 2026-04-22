@@ -3,37 +3,84 @@ import streamlit as st
 import re
 import os
 import datetime
-  
-    # ...后续逻辑
+
+# 1. 自动获取 Key：优先从云端 Secrets 读取，本地则尝试环境变量
+api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+
+if api_key:
+    genai.configure(api_key=api_key)
+    # 2. 核心修正：锁定为你测试通过的 2.5 模型名称
+    # 这样可以避免之前遇到的 400 (模型停用) 或 404 错误
+    DEFAULT_MODEL_NAME = "gemini-2.5-flash" 
+else:
+    st.warning("⚠️ JStudio 引擎未检测到有效 API Key，请检查 Cloud Secrets 配置。")
+    
 # 启用缓存：保护付费用户配额，避免重复请求
 @st.cache_data(ttl=3600, show_spinner=False)
 def run_v3_specialized_report(ticker, segment, data_payload, lang="中文"):
-
     """
-    iMarket Pro 核心 AI 决策引擎 V3.3
-    集成时间锚点校准与自动化 API 配置
+    JStudio iMarket Pro 核心 AI 决策引擎 V3.5 (Cloud Optimized)
+    1. 锁定 Gemini 2.5 Flash 引擎 (解决 404 模型过时问题)
+    2. 优先适配 Streamlit Cloud Secrets
+    3. 强制 2026 时间锚点注入
     """
-    
 
-    # 1. 强制注入 2026 时间锚点 (解决 2024 日期幻觉)
-    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    # 1. 强制注入 2026 时间锚点 (纠正 AI 的日期偏差)
+    now = datetime.datetime.now()
+    current_time_str = now.strftime("%Y-%m-%d %H:%M")
     
-    # 2. 自动化 API 配置
+    # 2. 自动化 API 配置 (针对云端部署优化)
     try:
-        if "GEMINI_API_KEY" in st.secrets:
-            api_key = st.secrets["GEMINI_API_KEY"]
-        else:
-            # 兼容本地环境变量测试
-            import os
-            api_key = os.getenv("GEMINI_API_KEY")
-            
+        # 优先级：Streamlit Secrets > 系统环境变量
+        api_key = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        
         if not api_key:
-            return "❌ Error: No API Key found in Secrets or Environment."
+            return "❌ Error: JStudio 无法在云端配置中找到 GEMINI_API_KEY。请在 Streamlit Cloud Settings -> Secrets 中添加。"
             
         genai.configure(api_key=api_key)
     except Exception as e:
-        return f"❌ API Configuration Failed: {str(e)}"
-    
+        return f"❌ API 配置失败: {str(e)}"
+
+    # 3. 设置生成参数
+    generation_config = {
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "top_k": 40,
+        "max_output_tokens": 8192,
+    }
+
+    # 4. 初始化模型 (关键更改：锁定 2.5-flash)
+    try:
+        # 你的账号权限已解锁 2.5，直接使用最强版本
+        model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            generation_config=generation_config
+        )
+
+        # 5. 构建结构化分析 Prompt
+        # 这里集成你要求的 segment 逻辑
+        analysis_context = f"当前系统时间: {current_time_str} (Pickering, ON)。分析标的: {ticker}。\n"
+        
+        prompt = f"{analysis_context}\n针对 {segment} 领域的深度报告需求，请分析以下数据：\n{data_payload}"
+
+        # 6. 发起请求
+        response = model.generate_content(prompt)
+        
+        if response and response.text:
+            return response.text
+        else:
+            return "⚠️ AI 引擎返回了空结果，请检查数据载荷。"
+
+    except Exception as e:
+        # 针对 404 的二次防御：如果 2.5 也报错，则尝试 3.1 预览版
+        if "404" in str(e):
+            try:
+                model = genai.GenerativeModel(model_name="gemini-3.1-pro-preview")
+                response = model.generate_content(data_payload)
+                return response.text
+            except:
+                return f"❌ 引擎版本冲突 (404): 你的账号权限可能已升级到 3.1 以上，请检查模型列表。"
+        return f"❌ 决策引擎运行异常: {str(e)}"    
     # 3. 初始化模型 (增加模型名称降级保护)
     try:
         # 优先使用您的 V3.1 预览版
@@ -41,6 +88,7 @@ def run_v3_specialized_report(ticker, segment, data_payload, lang="中文"):
     except Exception:
         # 如果预览版在云端未就绪，降级到稳定版 1.5-flash
         model = genai.GenerativeModel("gemini-1.5-flash")
+
 
     # 4. 构造带有“时间锁”的 System Prompt
     roles = {
