@@ -22,16 +22,49 @@ try:
 except ImportError as e:
     st.error(f"核心模块导入失败，请检查目录结构: {e}")
 
-# 3. 核心调用函数
 def call_vision_ai(image_file, prompt_text):
-    # 统一使用 ai_manager 获取付费版 2.5 引擎配置
-    model_name, status = ai_manager.configure_engine()
-    
-    if status != "SUCCESS":
-        return f"AI Engine Error: {status}"
-    
+    """
+    AI 视觉识别核心函数：确保与 iMarket 同样的 Key 读取逻辑
+    """
     try:
-        model = genai.GenerativeModel(model_name)
+        # 1. 核心修复：使用与 iMarket 一致的多重检测逻辑
+        api_key = st.secrets.get("GOOGLE_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+        
+        if not api_key:
+            return "ERROR: GOOGLE_API_KEY not found"
+            
+        # 🚀 强力清洗：确保没有换行符干扰
+        api_key_clean = str(api_key).strip().replace("\n", "").replace("\r", "")
+        genai.configure(api_key=api_key_clean)
+        
+        # 2. 统一版本：优先调用你测试成功的付费最新版 2.5
+        # 这样可以解决之前识别点数过少的问题
+        final_model_name = "gemini-2.5-flash" 
+        candidates = [
+            'gemini-2.5-flash',        # 优先级最高：付费最新版
+            'gemini-1.5-flash-latest', 
+            'gemini-1.5-flash-002',
+            'gemini-1.5-flash'
+        ]
+        
+        # 尝试验证模型可用性
+        try:
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            model_found = False
+            for cand in candidates:
+                for am in available_models:
+                    if cand in am:
+                        final_model_name = am
+                        model_found = True
+                        break
+                if model_found: break
+        except:
+            pass # 如果获取列表失败，直接用 gemini-2.5-flash 硬闯
+
+        # 3. 初始化并执行识别
+        model = genai.GenerativeModel(final_model_name)
+        
+        # 指针复位，确保图片读取完整
         if hasattr(image_file, 'seek'):
             image_file.seek(0)
         img = Image.open(image_file)
@@ -39,11 +72,12 @@ def call_vision_ai(image_file, prompt_text):
         response = model.generate_content([prompt_text, img])
         
         if response and response.text:
-            # 此处保留之前建议的深度清洗逻辑...
             return response.text.strip()
         return "ERROR: Empty Response"
+
     except Exception as e:
-        return f"AI Logic Error: {str(e)}"
+        return f"AI Engine Error: {str(e)}"
+    
     
 
         
