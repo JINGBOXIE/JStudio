@@ -38,9 +38,13 @@ def call_vision_ai(image_file, prompt_text):
         
         # 2. 动态寻找可用模型 (解决模型版本更新导致的 404 问题)
         # 默认保底模型
-        final_model_name = "gemini-1.5-flash" 
-        candidates = ['gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-pro-vision']
-        
+        final_model_name = "gemini-2.5-flash"  # 默认保底模型修改为 2.5
+        candidates = [
+            'gemini-2.5-flash',        # 优先级 1：你昨天测试成功的付费最新版
+            'gemini-1.5-flash-latest', # 优先级 2：1.5 的最新补丁版
+            'gemini-1.5-flash-002',    # 优先级 3：1.5 的最新稳定版
+            'gemini-1.5-flash'         # 优先级 4：基础版
+        ]
         try:
             # 获取当前 API Key 权限下真实可用的模型列表
             available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
