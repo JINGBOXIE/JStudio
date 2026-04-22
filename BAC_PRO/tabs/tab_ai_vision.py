@@ -1,114 +1,74 @@
 import streamlit as st
 import os
 import sys
+import re
 import google.generativeai as genai
 from PIL import Image
+import importlib
 
-# 1. 动态注入根目录路径 (确保能找到 core)
-# 假设 tab_ai_vision.py 位于 JStudio/BAC_PRO/modules/ 下
-# 需要向上移动两层到达 JStudio 根目录
+# --- 1. 路径注入 (确保从 JStudio/BAC_PRO/tabs/ 向上跳两级能找到 core) ---
 CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(CURRENT_FILE_DIR, "../../"))
 
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
+# 强制刷新路径优先级，处理 iCloud 路径识别问题
+sys.path = [p for p in sys.path if "JStudio" not in p]
+sys.path.insert(0, ROOT_DIR)
 
-# 2. 现在可以统一导入
+# --- 2. 核心模块导入 ---
 try:
+    if 'core' in sys.modules:
+        del sys.modules['core']
+    
     from core.ai_config import ai_manager
     from core.constants import AI_VISION_ROLE_PROMPT
     from core.snapshot_engine import get_fp_components
     from core.db_adapter import RedisAdapter, generate_fp_hash
 except ImportError as e:
-    st.error(f"核心模块导入失败，请检查目录结构: {e}")
+    st.error(f"核心模块导入失败: {e}")
+    st.code(f"当前搜寻根目录: {ROOT_DIR}\n目录内容: {os.listdir(ROOT_DIR) if os.path.exists(ROOT_DIR) else '路径不存在'}")
 
+# --- 3. 核心调用函数 (已修复逻辑重叠与清洗逻辑) ---
 def call_vision_ai(image_file, prompt_text):
     """
-    AI 视觉识别核心函数：确保与 iMarket 同样的 Key 读取逻辑
+    调用 Gemini 2.5 视觉引擎并执行深度结果清洗
     """
+    model_name, status = ai_manager.configure_engine()
+    
+    if status != "SUCCESS":
+        return f"AI Engine Error: {status}"
+    
     try:
-        # 1. 核心修复：使用与 iMarket 一致的多重检测逻辑
-        api_key = st.secrets.get("GOOGLE_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+        model = genai.GenerativeModel(model_name)
         
-        if not api_key:
-            return "ERROR: GOOGLE_API_KEY not found"
-            
-        # 🚀 强力清洗：确保没有换行符干扰
-        api_key_clean = str(api_key).strip().replace("\n", "").replace("\r", "")
-        genai.configure(api_key=api_key_clean)
-        
-        # 2. 统一版本：优先调用你测试成功的付费最新版 2.5
-        # 这样可以解决之前识别点数过少的问题
-        final_model_name = "gemini-2.5-flash" 
-        candidates = [
-            'gemini-2.5-flash',        # 优先级最高：付费最新版
-            'gemini-1.5-flash-latest', 
-            'gemini-1.5-flash-002',
-            'gemini-1.5-flash'
-        ]
-        
-        # 尝试验证模型可用性
-        try:
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            model_found = False
-            for cand in candidates:
-                for am in available_models:
-                    if cand in am:
-                        final_model_name = am
-                        model_found = True
-                        break
-                if model_found: break
-        except:
-            pass # 如果获取列表失败，直接用 gemini-2.5-flash 硬闯
-
-        # 3. 初始化并执行识别
-        model = genai.GenerativeModel(final_model_name)
-        
-        # 指针复位，确保图片读取完整
-        if hasattr(image_file, 'seek'):
-            image_file.seek(0)
-        img = Image.open(image_file)
-        
-        response = model.generate_content([prompt_text, img])
-        
-        if response and response.text:
-            return response.text.strip()
-        return "ERROR: Empty Response"
-
-    except Exception as e:
-        return f"AI Engine Error: {str(e)}"
-    
-    
-
-        
-        # 1. 确保图片指针在起始位置（防止 Streamlit 多次读取导致空字节流）
+        # 确保图片指针在起始位置，防止 Streamlit 多次读取导致空流
         if hasattr(image_file, 'seek'):
             image_file.seek(0)
             
         img = Image.open(image_file)
         
-        # 2. 调用 Gemini 2.5 引擎执行识别
+        # 调用 AI 引擎
         response = model.generate_content([prompt_text, img])
         
-        # 3. 深度清洗逻辑 (保留功能完整性)
         if response and response.text:
             clean_text = response.text.strip()
             
-            # 循环移除 Markdown 包裹标记 (如 ```json 或 ```text)
+            # 1. 循环移除 Markdown 包裹标记 (如 ```json 或 ```text)
             while clean_text.startswith("```") or clean_text.endswith("```"):
                 clean_text = clean_text.strip("`").strip()
             
-            # 移除模型可能自带的 "text" 前缀标识
+            # 2. 移除模型可能自带的 "text" 字符串
             if clean_text.lower().startswith("text"):
                 clean_text = clean_text[4:].strip()
-                
-            return clean_text
-        else:
-            return "ERROR: AI returned an empty response"
+            
+            # 3. 使用正则提取所有的 B/P (解决 "AI found no valid B/P" 问题的核心)
+            # 这样无论 AI 返回 "B, P, B" 还是 "BPB"，都能正确识别
+            detected_seq = re.findall(r'[BP]', clean_text.upper())
+            return ",".join(detected_seq) if detected_seq else "ERROR: No valid B/P found"
+            
+        return "ERROR: AI returned an empty response"
             
     except Exception as e:
-        # 捕获异常，并返回详细的错误日志
-        return f"Error during AI analysis: {str(e)}"
+        return f"AI Logic Error: {str(e)}"
 
 def render_ai_vision_tab(lang):
     """
@@ -159,21 +119,23 @@ def render_ai_vision_tab(lang):
         #st.image(input_image, caption="Input Source", use_container_width=True)
         if st.button(ui_text["btn_run"], type="primary", width="stretch") :
         #if st.button(ui_text["btn_run"], type="primary", use_container_width=True):
+            # ... 在识别成功后的代码块中修改 ...
             with st.status(ui_text["status_ai"]) as status:
                 ai_result = call_vision_ai(input_image, AI_VISION_ROLE_PROMPT)
                 
                 if "ERROR" in ai_result:
                     st.error(f"AI Engine Error: {ai_result}")
-                    status.update(label="❌ Failed", state="error")
                 else:
-                    try:
-                        # 清洗与格式化序列 (严格仅保留 B/P)
-                        raw_content = ai_result.replace("```", "").replace("text", "").strip().upper()
-                        detected_seq = [x.strip() for x in raw_content.split(",") if x.strip() in ['B', 'P']]
-                        
-                        if not detected_seq:
-                            st.warning("AI found no valid B/P sequence." if not is_cn else "AI 未检测到有效的 B/P 序列。")
-                        
+                    # --- 优化后的提取逻辑 ---
+                    # 1. 强制转大写
+                    raw_content = ai_result.upper()
+                    # 2. 使用正则匹配所有的 B 或 P (无视空格、逗号或换行)
+                    detected_seq = re.findall(r'[BP]', raw_content)
+                    
+                    if not detected_seq:
+                        st.warning(f"AI Response: {ai_result}") # 打印原文看看 AI 到底说了什么
+                        st.warning("AI found no valid B/P sequence.")
+                    else:
                         # 同步到全局状态
                         st.session_state.clean_results = detected_seq
                         if 'results' in st.session_state:
@@ -181,8 +143,6 @@ def render_ai_vision_tab(lang):
                         
                         status.update(label="✅ Success", state="complete")
                         st.toast(ui_text["toast_sync"])
-                    except Exception as e:
-                        st.error(f"Data Processing Error: {e}")
 
     st.divider()
 
