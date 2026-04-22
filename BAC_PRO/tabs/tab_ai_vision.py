@@ -16,24 +16,29 @@ from core.constants import AI_VISION_ROLE_PROMPT
 from core.snapshot_engine import get_fp_components
 from core.db_adapter import RedisAdapter, generate_fp_hash
 
+
+# --- 1. 模块级配置：在应用启动时立即获取 Key ---
+# 将获取逻辑移出函数内部，确保全局可用并提高检测优先级
+GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY")
+
 def call_vision_ai(image_file, prompt_text):
     """
-    AI 视觉识别核心函数：从 Secrets 安全获取配置并执行 Gemini 视觉分析
+    AI 视觉识别核心函数：使用全局 Secrets 配置并执行 Gemini 视觉分析
     """
     try:
-        api_key = st.secrets.get("GOOGLE_API_KEY")
-        
-        if not api_key:
+        # 验证全局 Key 是否存在
+        if not GOOGLE_API_KEY:
             return "ERROR: GOOGLE_API_KEY not found"
             
         # 🚀 强力清洗：去除所有可能的换行符、空格及隐藏字符
-        api_key = api_key.strip().replace("\n", "").replace("\r", "")
+        api_key_clean = GOOGLE_API_KEY.strip().replace("\n", "").replace("\r", "")
         
-        genai.configure(api_key=api_key)
-    
+        # 配置 Google AI 引擎
+        genai.configure(api_key=api_key_clean)
         
         # 2. 动态寻找可用模型 (解决模型版本更新导致的 404 问题)
-        final_model_name = "gemini-1.5-flash" # 默认保底模型
+        # 默认保底模型
+        final_model_name = "gemini-1.5-flash" 
         candidates = ['gemini-1.5-flash-latest', 'gemini-1.5-flash', 'gemini-pro-vision']
         
         try:
@@ -53,7 +58,7 @@ def call_vision_ai(image_file, prompt_text):
             if not model_found and available_models:
                 final_model_name = available_models[0]
         except Exception:
-            # 即使列出模型失败（如网络波动），仍尝试使用保底名称直接初始化
+            # 即使列出模型失败（如网络波动或权限限制），仍尝试使用保底名称直接初始化
             pass
 
         # 3. 初始化模型并执行识别
