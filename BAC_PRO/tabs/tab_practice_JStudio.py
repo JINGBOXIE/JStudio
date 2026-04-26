@@ -657,7 +657,7 @@ def render_practice_tab(lang):
         # A. 扫描深度
         st.session_state.hist_min_slider = st.sidebar.slider(
             label=label_hmin, min_value=1, max_value=12, 
-            value=st.session_state.get('hist_min_slider', 3), key="h_min_slider"
+            value=st.session_state.get('hist_min_slider', 4), key="h_min_slider"
         )
 
         # B. 长度门槛 (bet_len)
