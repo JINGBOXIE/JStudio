@@ -337,7 +337,7 @@ with st.sidebar:
     # --- 1. Logo 置顶 ---
     current_lang = st.session_state.get('lang_selector', 'English')
     target_logo = "assets/J Studio LOGO.PNG" if current_lang == "English" else "assets/J Studio LOGO CN.png"
-    st.image(target_logo, use_container_width=True)
+    st.image(target_logo, width="stretch")
 
 
     # --- 2. 登录与限额拦截 ---
@@ -348,7 +348,7 @@ with st.sidebar:
         st.subheader("🔑 Login / 登录")
         u_name = st.text_input("Username", key="login_username")
         u_pass = st.text_input("Password", type="password", key="login_password")
-        if st.button("Login", use_container_width=True):
+        if st.button("Login", width="stretch"):
             users = load_users()
             if u_name in users and users[u_name]["password"] == u_pass:
                 st.session_state.auth_user = u_name
@@ -381,7 +381,7 @@ with st.sidebar:
         st.write(f"👤 **{username}**")
         st.caption("Super User" if is_super else f"Remains: {remaining}")
     with col_l:
-        if st.button("Exit", use_container_width=True):
+        if st.button("Exit", width="stretch"):
             st.session_state.auth_user = None
             st.rerun()
 
@@ -456,7 +456,7 @@ with st.sidebar:
             name_idx = 1 if report_lang == "English" else 0
             pop_container = st.container(height=500)
             for symbol, names in WATCHLIST_DATA.items():
-                if pop_container.button(f"**{symbol}** | {names[name_idx]}", key=f"pop_{symbol}", use_container_width=True):
+                if pop_container.button(f"**{symbol}** | {names[name_idx]}", key=f"pop_{symbol}", width="stretch"):
                     # 计数逻辑：如果是新股票且非超级用户，扣费
                     if not is_super and st.session_state["ticker_input_val"] != symbol:
                         users = load_users()
@@ -494,7 +494,7 @@ with st.sidebar:
         spinner_msg = "Syncing global macro data and geopolitical intelligence..."
 
     # 渲染按钮
-    if st.sidebar.button(btn_label, key="btn_integrated_analysis", help=btn_help, use_container_width=True, type="primary"):
+    if st.sidebar.button(btn_label, key="btn_integrated_analysis", help=btn_help, width="stretch", type="primary"):
         with st.spinner(spinner_msg):
             # 初始化指数数据（传递给 AI 参考）
             index_data = {
@@ -904,7 +904,7 @@ if not prices.empty and ticker in prices.columns:
 
     # --- 1. 技术与情绪 (c1) ---
     with c1:
-        if st.button(b1_text, use_container_width=True):
+        if st.button(b1_text, width="stretch"):
             with st.spinner("Executing Quant Scan..." if report_lang == "English" else "正在执行量化扫描..."):
                 t_payload = {
                     "Price": f"{price_val:.2f}",
@@ -919,7 +919,7 @@ if not prices.empty and ticker in prices.columns:
                 st.session_state['v3_t_text'] = report # 存入持久化内容
 # --- 2. 财务与战略 (c2) ---
     with c2:
-        if st.button(b2_text, use_container_width=True):
+        if st.button(b2_text, width="stretch"):
             with st.spinner("Calculating Financial Moat..." if report_lang == "English" else "正在计算财务护城河..."):
                 # 获取估值数据
                 v_data = get_advanced_valuation(ticker, 0.15) 
@@ -945,7 +945,7 @@ if not prices.empty and ticker in prices.columns:
 
     # --- 3. 宏观与周期 (c3) ---
     with c3:
-        if st.button(b3_text, use_container_width=True):
+        if st.button(b3_text, width="stretch"):
             with st.spinner("Scanning Global Macro Radar..." if report_lang == "English" else "正在扫描全球宏观雷达..."):
                 m_payload = {
                     "Ticker": ticker,
@@ -1132,7 +1132,7 @@ if not prices.empty and ticker in prices.columns:
             data=full_report_md,
             file_name=file_name,
             mime="text/markdown",
-            use_container_width=True
+            width="stretch"
         )
 
         if report_lang == "中文":

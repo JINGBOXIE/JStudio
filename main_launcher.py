@@ -103,7 +103,7 @@ if not st.session_state.auth_user:
     # 通过增加两边的比例 [1.5, 1, 1.5]，中间的图片只会占用总宽度的 1/4 左右
     _, img_col, _ = st.columns([1.5, 1, 1.5]) 
     with img_col:
-        st.image("assets/banner.png", use_container_width=True)
+        st.image("assets/banner.png", width="stretch")
     
     # 3. 登录表单
     _, col, _ = st.columns([1, 0.8, 1])
@@ -111,7 +111,7 @@ if not st.session_state.auth_user:
         st.markdown("<div style='margin-top:30px;'></div>", unsafe_allow_html=True)
         u_id = st.text_input("Operator UID", placeholder="J / A / D").strip().upper()
         
-        if st.button("ACCESS SYSTEM", use_container_width=True):
+        if st.button("ACCESS SYSTEM", width="stretch"):
             if u_id in ['J', 'D', 'A']:
                 st.session_state.auth_user = u_id
                 st.rerun()
@@ -124,7 +124,7 @@ with st.sidebar:
     # A. Logo 展示
     logo_path = os.path.join(CURRENT_DIR, "assets", "banner.png")
     if os.path.exists(logo_path):
-        st.image(logo_path, use_container_width=True)
+        st.image(logo_path, width="stretch")
     
     # B. 语言选择器
     lang_options = {"EN": "English", "CN": "中文"}
@@ -143,16 +143,16 @@ with st.sidebar:
     # 只有在非首页或者特定条件下显示这些快捷导航
     if st.session_state.menu_choice == "PORTAL":
         st.write("Quick Navigation")
-        if st.button(L_MAP[st.session_state.lang]['nav_im'], use_container_width=True, key="side_nav_im"):
+        if st.button(L_MAP[st.session_state.lang]['nav_im'], width="stretch", key="side_nav_im"):
             st.session_state.menu_choice = "IMARKET"
             st.rerun()
             
-        if st.button(L_MAP[st.session_state.lang]['nav_bp'], use_container_width=True, key="side_nav_bp"):
+        if st.button(L_MAP[st.session_state.lang]['nav_bp'], width="stretch", key="side_nav_bp"):
             st.session_state.menu_choice = "BAC_PRO"
             st.session_state.bac_menu_choice = None  
             st.rerun()
 
-        if st.button(L_MAP[st.session_state.lang]['nav_gw'], use_container_width=True, key="side_nav_gw"):
+        if st.button(L_MAP[st.session_state.lang]['nav_gw'], width="stretch", key="side_nav_gw"):
             st.session_state.menu_choice = "BOOK"
             st.rerun()
 
@@ -180,7 +180,7 @@ with st.sidebar:
     
     if st.session_state.menu_choice != "PORTAL":
         #st.divider()
-        if st.button(f"🏠 {L_MAP[st.session_state.lang]['back']}", use_container_width=True, key="fixed_home_btn"):
+        if st.button(f"🏠 {L_MAP[st.session_state.lang]['back']}",width="stretch", key="fixed_home_btn"):
             st.session_state.menu_choice = "PORTAL"
             st.rerun()
 
@@ -241,7 +241,7 @@ with st.sidebar:
         
     with col_exit:
         # 2. 显式开启 use_container_width，确保按钮撑满 50% 的列宽
-        if st.button(L_MAP[st.session_state.lang]['exit'], key="mini_exit_link", use_container_width=True):
+        if st.button(L_MAP[st.session_state.lang]['exit'], key="mini_exit_link", width="stretch"):
             st.session_state.auth_user = None
             st.session_state.menu_choice = "PORTAL"
             st.rerun()
@@ -251,14 +251,14 @@ if st.session_state.menu_choice == "PORTAL":
     st.markdown(f"<h2 style='text-align:center; color:#d4af37;'>{L_MAP[st.session_state.lang]['welcome']}</h2>", unsafe_allow_html=True)
     st.write("---")
     c1, c2, c3 = st.columns(3)
-    if c1.button("iMarket Pro", use_container_width=True, key="p_im"):
+    if c1.button("iMarket Pro", width="stretch", key="p_im"):
         st.session_state.menu_choice = "IMARKET"; st.rerun()
-    if c2.button("BAC_PRO Engine", use_container_width=True, key="p_bp"):
+    if c2.button("BAC_PRO Engine", width="stretch", key="p_bp"):
         st.session_state.menu_choice = "BAC_PRO"
         st.session_state.bac_menu_choice = None # 确保进入介绍页
         st.rerun()
 
-    if c3.button("The Great Way", use_container_width=True, key="p_gw"):
+    if c3.button("The Great Way", width="stretch", key="p_gw"):
         st.session_state.menu_choice = "BOOK"; st.rerun()
     st.divider()
     

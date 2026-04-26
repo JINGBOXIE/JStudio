@@ -116,9 +116,9 @@ def render_ai_vision_tab(lang):
 
     if input_image:
         st.image(input_image, caption="Input Source", width="stretch")
-        #st.image(input_image, caption="Input Source", use_container_width=True)
+        #st.image(input_image, caption="Input Source", width="stretch")
         if st.button(ui_text["btn_run"], type="primary", width="stretch") :
-        #if st.button(ui_text["btn_run"], type="primary", use_container_width=True):
+        #if st.button(ui_text["btn_run"], type="primary", width="stretch"):
             # ... 在识别成功后的代码块中修改 ...
             with st.status(ui_text["status_ai"]) as status:
                 ai_result = call_vision_ai(input_image, AI_VISION_ROLE_PROMPT)

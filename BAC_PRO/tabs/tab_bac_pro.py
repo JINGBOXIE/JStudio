@@ -81,11 +81,11 @@ def render_bac_pro_tab(lang):
 
         c1, c2 = st.columns(2)
         with c1:
-            if st.button(label_drill, use_container_width=True, key="btn_drill_main"):
+            if st.button(label_drill, width="stretch", key="btn_drill_main"):
                 st.session_state.bac_menu_choice = t("nav_practice", lang)
                 st.rerun()
         with c2:
-            if st.button(label_live, use_container_width=True, key="btn_live_main"):
+            if st.button(label_live, width="stretch", key="btn_live_main"):
                 st.session_state.bac_menu_choice = t("nav_ai", lang)
                 st.rerun()
 

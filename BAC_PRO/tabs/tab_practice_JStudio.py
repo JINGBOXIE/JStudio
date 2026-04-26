@@ -1,5 +1,9 @@
 # ---------------------------------------------------------
-# tab_practice_JStudio.py
+# tab_practice_JStudio——V6.py
+#完全测试后的S1_STRATEGY_LIB下注策略， Bet最小注的起点开始下注和比对，否则忽略 V3
+#这里增加同一个DEAL共享一次查询结果 V4
+#增加AUTO STRATEGY V5
+#增加真实的余额查询供练习，不再使用1M虚拟值 V6
 # ---------------------------------------------------------
 import streamlit as st
 import os
@@ -25,7 +29,14 @@ from modules.ui_components import render_casino_table, render_bias_panel, render
 from core.sbi_full_model import compute_sbi_ev_from_counts
 from core.snapshot_engine import get_fp_components
 from core.db_adapter import RedisAdapter, generate_fp_hash 
-
+# --- 在文件顶部定义全局常量 ---
+S1_STRATEGY_LIB = {
+    "100": [100, 0, 0],
+    "110": [100, 100, 0],
+    "111": [100, 100, 100],
+    "121": [100, 200, 100],
+    "137": [100, 300, 700]
+}
 # --- 1. 弹窗定义区 (从 Redis 实时提取) ---
 
 
@@ -62,7 +73,7 @@ def show_recent_bets_dialog():
             'type': '类型' if is_cn else 'Type',
             'amount': '盈亏' if is_cn else 'Net',
             'action': '动作' if is_cn else 'Action',
-            'bet_len': '连长度' if is_cn else 'BetLen',
+            'bet_len': '下注点' if is_cn else 'BetPoint',
             'strategy': '策略' if is_cn else 'Strategy'
         }
         
@@ -70,7 +81,7 @@ def show_recent_bets_dialog():
         df = df[[c for c in col_map.keys() if c in df.columns]]
         df.rename(columns=col_map, inplace=True)
         
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width="stretch")
     except Exception as e:
         st.error(f"Error: {e}")
 
@@ -180,12 +191,127 @@ def show_summary_report_dialog():
         st.error(f"Render Error: {e}")
 
     # 6. 交互按钮
-    if st.button("CLOSE", use_container_width=True):
+    if st.button("CLOSE", width="stretch"):
         st.session_state.menu_choice = "GAMING LOGIC"
         st.rerun()
+
+
+def process_betting_logic():
+    """
+    核心下注大脑：
+    1. 检查路单是否存在。
+    2. 检查 3 注序列计数器是否已满。
+    3. 从共享仓库获取指纹比对结果 (代替原有的实时 Redis 请求)。
+    4. 只有 MATCH (存在 action) 且符合方向，才执行下注。
+    """
+    
+    # 1. 基础数据准备
+    clean_seq = st.session_state.get('clean_results', []) 
+    if not clean_seq:
+        return
+
+    # 获取用户在侧边栏设定的参数 (b_len 已在共享数据生成时拦截，此处保留用于打印)
+    cur_side = clean_seq[-1]
+    cur_len = 0
+    for x in reversed(clean_seq):
+        if x == cur_side:
+            cur_len += 1
+        else:
+            break
+        
+    # 2. 序列上限拦截：如果 S1 矩阵的 3 注已完成，则停止下注
+    if st.session_state.get('streak_counter', 0) >= 3:
+        return
+
+    # --- 【唯一必须修改的逻辑点：从共享仓库获取比对结果】 ---
+    shared_payload = st.session_state.get('shared_ai_data')
+        
+    # 如果没有共享数据，或者数据中没有 decision (说明路长不达标或 Redis 无匹配)，则直接退出
+    if not shared_payload or shared_payload.get('decision') is None:
+        return
+
+    # 提取原有逻辑需要的变量 (保持变量名与原程序一致)
+    decision = shared_payload['decision']
+    state_hash = shared_payload['hash'] 
+        # ---------------------------------------------------
+
+    # 5. 下注执行判定 (完全保留原有的判定与打印逻辑)
+    if decision and decision.get('action'):
+        raw_act = str(decision['action']).upper()
+
+        # 打印策略匹配成功信息—GEGIN (完全保留原有格式)
+        edge = decision.get('edge', 0)
+        print(f"\n[AI INSTRUCTION NOW] 🎯 MATCH FOUND!")
+        print(f"  └─ Hash: {state_hash}")
+        print(f"  └─ Action: {raw_act} | Edge: {edge:+.2%}")
+        print(f"  └─ Current Side: {cur_side} (Len: {cur_len})")
+        # 打印策略匹配成功信息-END
+            
+        # 根据 AI 给出的 ACTION 实时确定下注方向 (S=顺势/STAY, C=反势/CUT)
+        if "S" in raw_act:
+            target_side = cur_side
+        elif "C" in raw_act:
+            target_side = 'P' if cur_side == 'B' else 'B'
+        else:
+            return 
+
+        # 6. 调用执行器，从 S1_STRATEGY_LIB 矩阵中根据 counter 提取注码
+        execute_strategy_bet(target_side, decision.get('edge', 0))
+        
+def execute_strategy_bet(side, edge=0):
+    # 1. 获取用户在 UI 界面选择的原始策略 Key
+    current_strat = st.session_state.get('current_strategy_key', "100")
+
+    # --- 【S2 必须修改点】：仅当选择 AUTO 时，才根据 Edge 动态覆盖 strat_key ---
+    if current_strat == "AUTO":
+        if edge >= 0.05:
+            strat_key = "137"
+        elif edge >= 0.04:
+            strat_key = "121"
+        elif edge >= 0.03:
+            strat_key = "111"
+        elif edge >= 0.02:
+            strat_key = "110"
+        elif edge >= 0.01:
+            strat_key = "100"
+        else:
+            # Edge 低于 1% 时，不执行任何下注动作
+            print(f"[BET FOR NEXT] ⏩ S2 SKIP: Edge {edge:.2%} too low.")
+            return
+    else:
+        # 如果不是 AUTO，则直接使用用户选择的固定策略 (原有逻辑)
+        strat_key = current_strat
+
+    # --- 以下完全保留原有逻辑和变量 ---
+    amounts = S1_STRATEGY_LIB.get(strat_key, [100, 100, 100])
+    counter = st.session_state.get('streak_counter', 0)
+            
+    # 安全检查：防止索引越界
+    if counter < len(amounts):
+        current_amt = amounts[counter]
+                
+        if current_amt > 0:
+            if side == 'B':
+                st.session_state.bet_input_red = current_amt
+                st.session_state.bet_input_blue = 0
+            else:
+                st.session_state.bet_input_blue = current_amt
+                st.session_state.bet_input_red = 0
+                    
+            # 获取上一手的 P/L 用于输出 (直接从 session 提取)
+            res_val = st.session_state.get('last_win_loss', 0)
+                    
+            # 增强后台下注打印 (增加 S2 标识和 Prev_P/L)
+            print(f"[BET FOR NEXT] 💰 S2 EXECUTION: Side={side} | Amount={current_amt} | S1_Step={counter+1}/3 | Strat={strat_key}")
+        else:
+            print(f"[BET FOR NEXT] ⏩ SKIP: Amount is 0 for S1 Step {counter+1}")
             
 def render_practice_tab(lang):
     # --- 1. 全量变量保底初始化 (防止 AttributeError) ---
+    # 在 initial_keys 或变量初始化区域添加
+    if 'streak_counter' not in st.session_state: st.session_state.streak_counter = 0  # 0, 1, 2, 3
+    if 'current_strategy_key' not in st.session_state: st.session_state.current_strategy_key = "111" # 默认使用111
+    if 'active_streak_side' not in st.session_state: st.session_state.active_streak_side = None # 锁定下注时的方向
     initial_keys = {
         'results': [], 'clean_results': [], 'styled_results': [],
         'shoe': [], 'cut_card_at': 14, 'shoe_count': 0, 'balance': 0.0,
@@ -230,10 +356,13 @@ def render_practice_tab(lang):
         # --- A. 自动续靴逻辑 (保持不变) ---
         if st.session_state.get('end_shoe', False):
             if st.session_state.auto_run_active:
+                # 在重置前，确保打印最后一次结算日志，或手动强制一次同步检查
+                print(f"[SYSTEM] Shoe Ended. Final Balance: {st.session_state.balance}")
                 st.session_state.shoe_count += 1 
                 if st.session_state.shoe_count >= st.session_state.get('max_shoes', 10):
                     st.session_state.auto_run_active = False
                     return 
+                time.sleep(0.2)
                 reset_logic()
                 time.sleep(0.5)
 
@@ -283,7 +412,14 @@ def render_practice_tab(lang):
     if 'bac_pro_v8_final' not in st.session_state:
         st.session_state.dealer = BaccaratDealer()
         st.session_state.factory = ShoeFactory(decks=8)
-        st.session_state.balance = 10000000.0
+        if 'balance' not in st.session_state:
+            rw = st.session_state.get('record_adapter')
+            if rw:
+                # 只从权威数据库拿钱
+                db_val = rw.client.hget(f"u:info:{uid}", "balance")
+                st.session_state.balance = float(db_val) if db_val else 0.0 # 没钱就是0
+            else:
+                st.session_state.balance = 0.0 # 适配器没准备好前，不准凭空变出钱
         reset_logic()
         st.session_state.bac_pro_v8_final = True
      
@@ -333,62 +469,105 @@ def render_practice_tab(lang):
                 # 记录下注瞬间的连开长度
                 betting_moment_len = pre_cur_len
 
-                # --- 3. 物理发牌 [BACKEND-3] ---
-                # 先出结果，才能判定“包含了这一手”的形态是否匹配 1B 数据库
+                # --- 3. 物理发牌 ---
                 oc = st.session_state.dealer.deal_one_hand(st.session_state.shoe)
                 st.session_state.last_outcome_obj = oc
                 res = oc.winner
-                print(f"\n[BACKEND-3] 🃏 物理发牌结果: {res}")
+                print(f"\n[BACKEND-3] 最新发牌结果: {res}")
 
-                # --- 4. 结算 ---
-                new_bal, net_profit, _ = settle_hand(res, current_bets, st.session_state.balance)
-                st.session_state.balance = new_bal
+                # --- 4. 结算 (已重构) ---
+                # 仅调用 settle_hand 来计算该手的 net_profit
+                # 传入 st.session_state.balance 仅作为基数参考，我们不再使用其返回的 new_bal
+                _, net_profit, _ = settle_hand(res, current_bets, st.session_state.balance)
 
-                # --- 5. AI 决策判定 (基于包含 res 的完整序列) ---
+                # 注意：这里删掉了 st.session_state.balance = new_bal
+
+                # ---  handle_deal_click 中的计数逻辑 ---
+                actual_bet_made = current_bets["B"] + current_bets["P"]
+                if actual_bet_made > 0:
+                    if res in ['B', 'P']:  # 严格限制只有 B 或 P 才增加计数
+                        st.session_state.streak_counter += 1
+                        print(f"[STRATEGY EXCUTION] ✅ Effective Bet Counted（锁定下注➕开牌/上手的结算）: {st.session_state.streak_counter}/3")
+                    else:
+                        # 遇到 T 时，明确不增加计数器，确保下一手依然使用当前的 Step 注码
+                        print(f"[STRATEGY EXCUTION] 🟡 TIE Detected - Counter held at: {st.session_state.streak_counter}/3")
+                        
+                # --- 5. AI 决策判定 (全面拦截版本) ---
                 adapter = st.session_state.get('redis_adapter')
                 h_min = st.session_state.get('h_min_slider', 3) 
+                b_len_threshold = st.session_state.get('bet_len_slider_input', 1) # 获取路长拦截阈值
                 
                 if adapter and res in ['B', 'P']:
-                    # 核心：构造包含当前结果的完整样板
+                    # 构造包含刚刚出的结果的序列 (原有逻辑)
                     current_full_seq = pre_deal_seq + [res]
-
-                    # === 【关键修复：在此处立即定义变量，防止下方 print 报错】 ===
-                    hash_depth = len(current_full_seq)
-                    hash_seq_str = "".join(current_full_seq[-12:])
-
+                    
+                    # A. 计算这一手产生后的连开长度 (原有逻辑)
+                    check_side = current_full_seq[-1]
+                    check_len = 0
+                    for x in reversed(current_full_seq):
+                        if x == check_side: check_len += 1
+                        else: break
+                    
+                    # --- 【新增需求 1】：每个 DEAL 都需要计算指纹，用于 UI 状态同步 ---
                     components = get_fp_components(current_full_seq, h_min=h_min)
                     state_hash = generate_fp_hash(*components)
+                    
+                    # 预设共享变量的基础结构，确保 UI 始终能拿到当前的 Hash
+                    shared_payload = {
+                        "hash": state_hash,
+                        "decision": None,
+                        "status": f"WAITING ({check_len}/{b_len_threshold})"
+                    }
 
-                    # [BACKEND-2] 执行比对：判定当前形态是否为机会点
-                    decision = adapter.get_state_decision(state_hash)
-                    if decision:
-                        is_ai_match = True
-                        # 仅在后台打印，不使用 st.balloons() 以防白屏
-                        raw_val = str(decision.get('action', '')).upper()
-                        if "CU" in raw_val or raw_val == "C": current_action = "C"
-                        elif "CO" in raw_val or raw_val == "S": current_action = "S"
-                        else: current_action = "?"
+                    # B. 【全面拦截点】只有长度达标才请求 Redis
+                    if check_len >= b_len_threshold:
+                        # 执行 Redis 比对 (保持原有 adapter 调用)
+                        decision = adapter.get_state_decision(state_hash)
+                        
+                        if decision:
+                            # --- 原有逻辑保留：设置当前决策方向 ---
+                            is_ai_match = True
+                            raw_val = str(decision.get('action', '')).upper()
+                            if "CU" in raw_val or raw_val == "C": current_action = "C"
+                            elif "CO" in raw_val or raw_val == "S": current_action = "S"
+                            else: current_action = "?"
+                            
+                            # --- 【新增需求 2】：共享比对结果给 UI ---
+                            shared_payload["decision"] = decision
+                            shared_payload["status"] = "MATCHED"
+                        else:
+                            is_ai_match = False
+                            shared_payload["status"] = f"NO MATCH ({check_len})"
+                            print(f"[BACKEND-2] ⚪ NO MATCH at length {check_len}")
                     else:
-                        print(f"[BACKEND-2] ⚪ NO MATCH")
+                        # 长度不达标，完全不触发比对 (原有逻辑)
+                        is_ai_match = False
+                        shared_payload["status"] = f"WAITING ({check_len}/{b_len_threshold})"
+                        # print(f"[BACKEND-2] Blocked: {check_len} < {b_len_threshold}")
 
-                # --- 6. 判定渲染长度 [BACKEND-4] ---
+                    # --- 【核心共享点】：存入 session_state 供 UI 侧边栏读取 ---
+                    st.session_state['shared_ai_data'] = shared_payload
+
+                # --- 6. 判定渲染标记强度 ---
                 marked_len_for_ui = 0
                 if res in ['B', 'P']:
                     if betting_moment_len > 0 and res == pre_deal_seq[-1]:
                         marked_len_for_ui = betting_moment_len + 1
                     else:
                         marked_len_for_ui = 1
-                
-                # --- 7. 写入 Redis 存证 [BACKEND-5] ---
+                # --- 7. 写入 Redis 存证 (保留映射并同步余额) ---
                 record_writer = st.session_state.get('record_adapter')
-                if record_writer and total_bet > 0:
+                if record_writer and actual_bet_made > 0:
                     try:
                         target_uid = st.session_state.get('auth_user', "J")
                         target_uname = st.session_state.get('username', f"User_{target_uid}")
+                        
+                        # ✅ 保留映射逻辑：将 C/S 转换为易读的单词
                         act_map = {"C": "CUT", "S": "CONTINUE"}
                         act = act_map.get(current_action, "MANUAL")
-
-                        record_writer.record_app_transaction(
+                        
+                        # 执行写入，并获取 Redis 实时计算出的 new_balance
+                        db_updated_balance = record_writer.record_app_transaction(
                             user_id=target_uid,             
                             username=target_uname,      
                             amount=net_profit,       
@@ -396,19 +575,24 @@ def render_practice_tab(lang):
                             strategy=st.session_state.get('strategy_mode', "V8_AUTO"), 
                             hist_len=h_min, 
                             bet_len=betting_moment_len, 
-                            action=act  
+                            action=act  # 使用转换后的单词
                         )
-                        print(f"[BACKEND-5] 📝 DB存证 | BetLen: {betting_moment_len} | 结果: {res}")
-                    except Exception as e:
-                        print(f"Redis Sync Error: {e}")
 
-                # --- 8. 更新统计与路单渲染池 ---
+                        # ✅ 同步：让 UI 余额等于数据库返回的真实数字
+                        if db_updated_balance is not None:
+                            st.session_state.balance = db_updated_balance
+                            
+                    except Exception as e:
+                        print(f"❌ Redis Sync Error: {e}")
+
+
+
+                # --- 8. 更新路单渲染池 ---
                 st.session_state.rank_counts, st.session_state.stats = update_shoe_stats(oc, st.session_state.rank_counts, st.session_state.stats)
                 st.session_state.results.append(res)
                 
-                bet_res = "win" if net_profit > 0 else "loss" if total_bet > 0 and res != 'T' else None
+                bet_res = "win" if net_profit > 0 else "loss" if actual_bet_made > 0 and res != 'T' else None
                 
-                # 渲染压入：is_ai_match 此时已完成针对当前 res 的精确校准
                 st.session_state.styled_results.append({
                     "v": res,
                     "m": is_ai_match, 
@@ -416,22 +600,25 @@ def render_practice_tab(lang):
                     "action": current_action
                 })
 
-                # --- 9. 物理序列入库 ---
+                # --- 9. 物理序列入库 & 策略重置判定 ---
                 if res in ['B', 'P']: 
                     st.session_state.clean_results.append(res)
-                    print(f"[BACKEND-6] ✅ 序列更新完毕 | 新总长度: {len(st.session_state.clean_results)}")
+                    
+                    # 检查是否变路 (用于 S1 策略重置)
+                    current_clean_seq = st.session_state.clean_results
+                    if len(current_clean_seq) >= 2:
+                        if current_clean_seq[-1] != current_clean_seq[-2]:
+                            st.session_state.streak_counter = 0
+                            st.session_state.active_streak_side = None
+                            st.session_state.streak_bet_locked = False
+                            print("[S1 STRATEGY] 🔄 Road Changed - S1 Reset")
 
-                # --- 🎯 核心整合：在此处插入解锁逻辑 ---
-                clean_seq = st.session_state.clean_results
-                if len(clean_seq) >= 2:
-                    # 如果结果变了（跳路），则解锁
-                    if clean_seq[-1] != clean_seq[-2]:
-                        st.session_state.streak_bet_locked = False
-                else:
-                    # 靴头第一手总是解锁状态
-                    st.session_state.streak_bet_locked = False
+                # 满 3 注拦截逻辑（规则 5）
+                if st.session_state.streak_counter >= 3:
+                    # 3 注任务已完成，等待下次变路重置
+                    pass
 
-                if total_bet > 0:
+                if actual_bet_made > 0:
                     st.session_state.bet_history.append({"hand_no": len(st.session_state.results), "winner": oc.winner, "net": net_profit})
                 
                 # 下注输入框归零
@@ -440,79 +627,8 @@ def render_practice_tab(lang):
 
             except IndexError:
                 st.session_state.end_shoe = True
+    
 
-    def process_betting_logic():
-        """
-        大脑 (The Brain): 
-        负责监控下注时机。它扫描路单，对比 bet_len 和 hist_min，处理单注/连注策略。
-        只有在条件吻合且 AI 给出 Action 时，才会在注码框填入数字。
-        """
-        # 1. 基础状态获取与初始化
-        h_min = st.session_state.get('hist_min_slider', 3)
-        b_len = st.session_state.get('bet_len_slider_input', 1)
-        # 统一内部策略标识，不受语言切换影响
-        is_single_mode = "单注" in st.session_state.strategy_mode or "Single" in st.session_state.strategy_mode
-        is_single_mode = (st.session_state.strategy_mode == "ONE BET")
-        clean_seq = st.session_state.get('clean_results', [])
-        if not clean_seq:
-            return
-
-        # 2. 计算当前环境 (Context Analysis)
-        cur_side = clean_seq[-1]
-        cur_len = 0
-        for x in reversed(clean_seq):
-            if x == cur_side:
-                cur_len += 1
-            else:
-                break
-
-        # --- 逻辑门禁 1: 长度准入控制 (bet_len) ---
-        # 只有当前连开长度达到用户设定的门槛时，大脑才继续思考
-        if cur_len < b_len:
-            return
-
-        # --- 逻辑门禁 2: 频率策略控制 (Streak Lock) ---
-        # 如果处于“单注”模式且当前 Streak 已经投过注了，则闭眼，不再扫描
-        if is_single_mode and st.session_state.get('streak_bet_locked', False):
-            return
-
-        # --- 逻辑门禁 3: AI 指纹匹配 (AI Intelligence) ---
-        adapter = st.session_state.get('redis_adapter')
-        if adapter:
-            # 获取指纹组件并生成 Hash
-            components = get_fp_components(clean_seq, h_min=h_min)
-            state_hash = generate_fp_hash(*components)
-            
-            # 从数据库/模型获取决策
-            decision = adapter.get_state_decision(state_hash)
-
-            if decision and decision.get('action'):
-                # 提取 Action 字符并标准化
-                raw_act = str(decision['action']).upper()
-                
-                # 判定下注方向: S(Stay/Continue) 顺势, C(Cut) 逆势
-                if "S" in raw_act:
-                    target_side = cur_side
-                elif "C" in raw_act:
-                    target_side = 'P' if cur_side == 'B' else 'B'
-                else:
-                    return # 无效 Action
-
-                # --- 执行指令: 向下注框填入金额 ---
-                if target_side == 'B':
-                    st.session_state.bet_input_red = 100
-                else:
-                    st.session_state.bet_input_blue = 100
-                
-                # --- 关键锁操作: 只要下注成功且是单注模式，立即上锁 ---
-                if is_single_mode:
-                    st.session_state.streak_bet_locked = True
-                
-                # 视觉反馈: 仅在发现新指纹信号时放气球
-                if st.session_state.get("last_balloon_hash") != state_hash:
-                    #st.balloons()
-                    st.session_state.last_balloon_hash = state_hash
-        
     with st.sidebar:
         # --- 侧边栏：AI 策略配置 (多语言适配版) ---
         st.divider()
@@ -537,13 +653,35 @@ def render_practice_tab(lang):
         # B. 长度门槛 (bet_len)
         st.session_state.bet_len_slider_input = st.sidebar.slider(
             label=label_blen, min_value=1, max_value=10, 
-            value=st.session_state.get('bet_len_slider_input', 1)
+            value=st.session_state.get('bet_len_slider_input', 3)
         )
 
-        # C. 频率切换 (strategy_mode)
-        selected_strat = st.sidebar.selectbox(label=label_strat, options=strat_options)
-        # 内部逻辑统一映射为中文标识，方便后端判断
-        st.session_state.strategy_mode = "ONE BET" if ("单注" in selected_strat or "Single" in selected_strat) else "MUTI BET"
+
+        # --- 侧边栏：S1 策略矩阵配置 ---
+        is_cn = st.session_state.get('lang', 'CN') == "CN"
+
+        # 1. 定义多语言文案
+        label_s1_strat = "投注策略矩阵" if is_cn else "Betting Strategy Matrix"
+        help_s1 = "选择连续 3 注的注码分配方案 (S1 规范)" if is_cn else "Select betting distribution for 3 consecutive bets (S1 Standard)."
+
+        # 2. 策略选项定义
+        strat_options = ["100", "110", "111", "121", "137", "AUTO"]
+
+        # 3. 渲染下拉选择框
+        selected_strat = st.sidebar.selectbox(
+            label=label_s1_strat,
+            options=strat_options,
+            index=0,  # 默认指向 "100"
+            help=help_s1
+        )
+
+        # 4. 状态同步
+        # current_strategy_key 用于逻辑计算提取 STRATEGY_LIB 的值
+        st.session_state.current_strategy_key = selected_strat 
+
+        # strategy_mode 用于 UI 显示或 Redis 存证
+        st.session_state.strategy_mode = f"S1-{selected_strat}"
+
         
 # --- 5.A 顶部：下注区分割线 (保持不变) ---
         divider_text = "BETTING ZONE" if st.session_state.lang == "EN" else "下注区"
@@ -657,11 +795,11 @@ def render_practice_tab(lang):
         c_btn1, c_btn2 = st.columns(2)
             
         with c_btn1:
-            if st.button("📊 " + ("最近下注" if is_cn else "Recent"), use_container_width=True):
+            if st.button("📊 " + ("最近下注" if is_cn else "Recent"),width="stretch"):
                 show_recent_bets_dialog()
                 
         with c_btn2:
-            if st.button("📈 " + ("综合报表" if is_cn else "Reports"), use_container_width=True):
+            if st.button("📈 " + ("综合报表" if is_cn else "Reports"),width="stretch"):
                 show_summary_report_dialog()
 
     # --- 6. 主界面渲染 ---
@@ -681,7 +819,7 @@ def render_practice_tab(lang):
         is_cn = st.session_state.lang == "CN"
         
         with c1:
-            st.button(lt.get("btn_deal"), use_container_width=True, type="primary", 
+            st.button(lt.get("btn_deal"), width="stretch", type="primary", 
                       disabled=st.session_state.end_shoe, on_click=handle_deal_click)
         
         with c_auto:
@@ -692,7 +830,7 @@ def render_practice_tab(lang):
             s_label = "🛑 停止运行" if is_cn else "🛑 STOP"
             
             if st.button(s_label if is_active else a_label, 
-                         use_container_width=True, 
+                         width="stretch", 
                          type="primary" if is_active else "secondary", 
                          key="auto_btn"):
                 st.session_state.auto_run_active = not is_active
@@ -701,7 +839,7 @@ def render_practice_tab(lang):
                 st.rerun()
 
         with c2:
-            if st.button(lt.get("btn_new_shoe"), use_container_width=True):
+            if st.button(lt.get("btn_new_shoe"), width="stretch"):
                 reset_logic()
                 # --- 3 FREE HANDS ---
                 handle_deal_click()
@@ -714,7 +852,7 @@ def render_practice_tab(lang):
             label_marker = "🎯 标记模式" if is_cn else "🎯 MARKER"
             label_natural = "🍃 自然模式" if is_cn else "🍃 NATURAL"
             curr_mode = label_marker if st.session_state.marker_mode else label_natural
-            if st.button(curr_mode, use_container_width=True):
+            if st.button(curr_mode, width="stretch"):
                 st.session_state.marker_mode = not st.session_state.marker_mode
                 st.rerun()
 
