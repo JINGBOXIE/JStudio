@@ -410,18 +410,30 @@ def render_practice_tab(lang):
 
 
     if 'bac_pro_v8_final' not in st.session_state:
+        st.session_state.bac_pro_v8_final = True
         st.session_state.dealer = BaccaratDealer()
         st.session_state.factory = ShoeFactory(decks=8)
-        if 'balance' not in st.session_state:
+        
+        # --- 严格余额锁定逻辑 ---
+        # 如果 balance 已经在 session 里（比如登录时加载的），直接跳过，不执行任何赋值
+        if 'balance' not in st.session_state or st.session_state.balance == 0:
             rw = st.session_state.get('record_adapter')
+            # 这里建议使用当前登录的 uid，确保是从 u:info:J 读取
+            target_uid = st.session_state.get('auth_user', "J") 
+            
             if rw:
-                # 只从权威数据库拿钱
-                db_val = rw.client.hget(f"u:info:{uid}", "balance")
-                st.session_state.balance = float(db_val) if db_val else 0.0 # 没钱就是0
+                db_val = rw.client.hget(f"u:info:{target_uid}", "balance")
+                if db_val is not None:
+                    st.session_state.balance = float(db_val)
+                else:
+                    # 数据库真的没钱才给 0，不准给 10000.0 或 1000万
+                    st.session_state.balance = 0.0
             else:
-                st.session_state.balance = 0.0 # 适配器没准备好前，不准凭空变出钱
+                # 适配器没准备好，保持 0，等待后续 handle_deal_click 同步
+                st.session_state.balance = 0.0
+                
         reset_logic()
-        st.session_state.bac_pro_v8_final = True
+        
      
         
     def handle_deal_click():
