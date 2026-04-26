@@ -408,17 +408,16 @@ def render_practice_tab(lang):
         st.session_state.last_fp_advice = {"match": False, "fp_id": "READY", "action": "WAIT"}
         st.session_state.streak_bet_locked = False
 
-
+        # --- 修正后的代码块 (请直接替换) ---
     if 'bac_pro_v8_final' not in st.session_state:
         st.session_state.bac_pro_v8_final = True
         st.session_state.dealer = BaccaratDealer()
         st.session_state.factory = ShoeFactory(decks=8)
         
-        # --- 严格余额锁定逻辑 ---
-        # 如果 balance 已经在 session 里（比如登录时加载的），直接跳过，不执行任何赋值
+        # 严格余额同步
         if 'balance' not in st.session_state or st.session_state.balance == 0:
             rw = st.session_state.get('record_adapter')
-            # 这里建议使用当前登录的 uid，确保是从 u:info:J 读取
+            # 拿到当前真实的 UID
             target_uid = st.session_state.get('auth_user', "J") 
             
             if rw:
@@ -426,12 +425,11 @@ def render_practice_tab(lang):
                 if db_val is not None:
                     st.session_state.balance = float(db_val)
                 else:
-                    # 数据库真的没钱才给 0，不准给 10000.0 或 1000万
                     st.session_state.balance = 0.0
             else:
-                # 适配器没准备好，保持 0，等待后续 handle_deal_click 同步
                 st.session_state.balance = 0.0
-                
+        
+        # ！！重置逻辑必须缩进到这个 if 块里面 ！！
         reset_logic()
         
      

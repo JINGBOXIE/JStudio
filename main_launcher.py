@@ -109,7 +109,7 @@ if not st.session_state.auth_user:
     _, col, _ = st.columns([1, 0.8, 1])
     with col:
         st.markdown("<div style='margin-top:30px;'></div>", unsafe_allow_html=True)
-        u_id = st.text_input("Operator UID", placeholder="J / A / D").strip().upper()
+        u_id = st.text_input("Operator UID", placeholder="ENTER ID CODE").strip().upper()
         
         if st.button("ACCESS SYSTEM", width="stretch"):
             if u_id in ['J', 'D', 'A']:
