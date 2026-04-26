@@ -663,7 +663,7 @@ def render_practice_tab(lang):
         # B. 长度门槛 (bet_len)
         st.session_state.bet_len_slider_input = st.sidebar.slider(
             label=label_blen, min_value=1, max_value=10, 
-            value=st.session_state.get('bet_len_slider_input', 3)
+            value=st.session_state.get('bet_len_slider_input', 4)
         )
 
 
