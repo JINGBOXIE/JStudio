@@ -265,14 +265,14 @@ if st.session_state.menu_choice == "PORTAL":
     st.markdown(f"<h2 style='text-align:center; color:#d4af37;'>{L_MAP[st.session_state.lang]['welcome']}</h2>", unsafe_allow_html=True)
     st.write("---")
     c1, c2, c3 = st.columns(3)
-    if c1.button("iMarket Pro", width="stretch", key="p_im"):
+    if c1.button("iMarket Engine", width="stretch", key="p_im"):
         st.session_state.menu_choice = "IMARKET"; st.rerun()
-    if c2.button("BAC_PRO Engine", width="stretch", key="p_bp"):
+    if c2.button("iBACCARAT Engine", width="stretch", key="p_bp"):
         st.session_state.menu_choice = "BAC_PRO"
         st.session_state.bac_menu_choice = None # 确保进入介绍页
         st.rerun()
 
-    if c3.button("The Great Way", width="stretch", key="p_gw"):
+    if c3.button("iGame Logic", width="stretch", key="p_gw"):
         st.session_state.menu_choice = "BOOK"; st.rerun()
     st.divider()
     
