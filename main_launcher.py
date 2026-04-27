@@ -325,7 +325,7 @@ elif st.session_state.menu_choice == "BOOK":
     is_cn = st.session_state.lang == "CN"
     
     # 1. 动态文案变量
-    book_title = "The Great Way" if not is_cn else "大道至简"
+    book_title = "The Great Way, Made Simple" if not is_cn else "大道至简"
     motto = "生活极简 · 生命极专" if is_cn else "Simple living · Focused being"
     
     forum_desc = (
