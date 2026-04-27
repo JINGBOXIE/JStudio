@@ -324,27 +324,55 @@ elif st.session_state.menu_choice == "BAC_PRO":
 elif st.session_state.menu_choice == "BOOK":
     is_cn = st.session_state.lang == "CN"
     
-    # 动态文案变量
-    book_title = "The Great Way, Made Simple"
-    # 核心金句 (定稿文案)
+    # 1. 动态文案变量
+    book_title = "The Great Way" if not is_cn else "大道至简"
     motto = "生活极简 · 生命极专" if is_cn else "Simple living · Focused being"
     
-    # 你要求的翻译内容
     forum_desc = (
-        "由 AI 主导的博弈理论专栏正在开发中，旨在简化复杂人性与社会运行逻辑。" 
+        "由 AI 主导的博弈逻辑训练正在开发中，旨在简化复杂社会与人性运行逻辑。" 
         if is_cn else 
-        "AI-driven Gaming Theory forum under development, designed to simplify complex human nature and social dynamics."
+        "AI-driven Gaming Logic Drill under development."
     )
 
-    # UI 渲染
+    # 2. 标题与视觉中心
     st.subheader(book_title)
-    
-    # 视觉中心：金句
     st.markdown(f"""
         <div style='margin: 20px 0px; padding: 15px; border-left: 4px solid #D4AF37; background: rgba(212, 175, 55, 0.05);'>
             <h2 style='color: #D4AF37; margin: 0; font-size: 1.8rem;'>{motto}</h2>
         </div>
     """, unsafe_allow_html=True)
-    
-    # 状态提示：受左侧主控按钮控制的双语翻译
+
+    # 3. 图片渲染 (保持你的 1/8 比例)
+    aces_img_path = os.path.join(CURRENT_DIR, "assets", "Aces.png")
+    if os.path.exists(aces_img_path):
+        _, img_col_bp, _ = st.columns([1.75, 0.5, 1.75]) 
+        with img_col_bp:
+            st.image(aces_img_path, use_container_width=True) 
+
+    # 4. 🚀 严格语言受控的金句渲染
+    if is_cn:
+        # 中文版渲染：深灰色，沉稳厚重
+        st.markdown(
+            """
+            <div style="text-align: center; padding: 15px; border-top: 1px solid #eee; margin-top: 20px;">
+                <p style="color: #555555; font-family: 'Source Han Serif SC', serif; font-size: 1.1em; letter-spacing: 2px; font-weight: 500;">
+                    市场没有新鲜事，博弈亦无终局，它们不过是操控人性的精致游戏。
+                </p>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
+    else:
+        # 英文版渲染：暗金色，古典金融感
+        st.markdown(
+            """
+            <div style="text-align: center; padding: 15px; border-top: 1px solid #eee; margin-top: 20px;">
+                <p style="color: #d4af37; font-family: 'Georgia', serif; font-size: 1.1em; font-style: italic; letter-spacing: 0.5px;">
+                    "Markets never change, games never end—it’s all just a refined orchestration of human nature."
+                </p>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
+
     st.info(forum_desc)
