@@ -109,14 +109,28 @@ if not st.session_state.auth_user:
     _, col, _ = st.columns([1, 0.8, 1])
     with col:
         st.markdown("<div style='margin-top:30px;'></div>", unsafe_allow_html=True)
-        u_id = st.text_input("Operator UID", placeholder="ENTER ID CODE").strip().upper()
+        u_id = st.text_input("Operator UID", placeholder="UID").strip().upper()
         
         if st.button("ACCESS SYSTEM", width="stretch"):
-            if u_id in ['J', 'D', 'A']:
-                st.session_state.auth_user = u_id
-                st.rerun()
-            else: 
-                st.error("Access Denied")
+            if not u_id:
+                st.error("Please enter your UID.")
+            else:
+                try:
+                    from core.db_adapter import RedisAdapter
+                    record_url = st.secrets["UNIFIED_ACCOUNT_SYSTEM"]["REDIS_URL"]
+                    adapter = RedisAdapter(record_url)
+                    user_info = adapter.client.hgetall(f"u:info:{u_id}")
+                    
+                    if not user_info:
+                        # ✅ 动态查库，用户不存在直接拒绝
+                        st.error(f"❌ User [{u_id}] not found." )
+                    else:
+                        # ✅ 用户存在，写入 session
+                        st.session_state.auth_user = u_id
+                        st.session_state.record_adapter = adapter
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Database connection failed: {e}")
     st.stop()
     
 # --- 4. 侧边栏布局 ---
