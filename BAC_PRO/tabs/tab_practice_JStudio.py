@@ -336,10 +336,13 @@ def render_practice_tab(lang):
     if 'streak_bet_locked' not in st.session_state: st.session_state.streak_bet_locked = False
     initial_keys = {
         'results': [], 'clean_results': [], 'styled_results': [],
-        'shoe': [], 'cut_card_at': 14, 'shoe_count': 0, 'balance': 0.0,
+        'cut_card_at': 14, 'shoe_count': 0,
         'stats': {"B": 0, "P": 0, "T": 0}, 'end_shoe': False,
         'auto_run_active': False, 'strategy_mode': "Single Bet"
     }
+    for key, val in initial_keys.items():
+        if key not in st.session_state:
+            st.session_state[key] = val
     for key, val in initial_keys.items():
         if key not in st.session_state:
             st.session_state[key] = val
@@ -434,9 +437,46 @@ def render_practice_tab(lang):
     if 'bac_pro_v8_final' not in st.session_state:
         st.session_state.dealer = BaccaratDealer()
         st.session_state.factory = ShoeFactory(decks=8)
-        st.session_state.balance = 10000000.0
+        # ✅ 从 Redis 读取真实余额，读取失败才用 0 占位
+        try:
+            _uid = st.session_state.get('auth_user', '').upper()
+            _adapter = st.session_state.get('record_adapter')
+            if _adapter and _uid:
+                _val = _adapter.client.hget(f"u:info:{_uid}", "balance")
+                st.session_state.balance = float(_val) if _val is not None else 0.0
+            else:
+                st.session_state.balance = 0.0
+        except Exception:
+            st.session_state.balance = 0.0
         reset_logic()
         st.session_state.bac_pro_v8_final = True
+    else:
+        # ✅ 防御性检查：每次 exec_module 后重建类引用
+        # 动态加载导致每次重渲染产生新的类对象，必须用 isinstance 校验类型一致性
+        try:
+            dealer_ok = isinstance(st.session_state.get('dealer'), BaccaratDealer)
+        except Exception:
+            dealer_ok = False
+        try:
+            factory_ok = isinstance(st.session_state.get('factory'), ShoeFactory)
+        except Exception:
+            factory_ok = False
+        try:
+            shoe_ok = st.session_state.get('shoe') is not None and factory_ok
+        except Exception:
+            shoe_ok = False
+
+        if not dealer_ok:
+            st.session_state.dealer = BaccaratDealer()
+        if not factory_ok:
+            st.session_state.factory = ShoeFactory(decks=8)
+        
+
+        # 基础列表兜底
+        for _key in ['clean_results', 'styled_results', 'results', 'bet_history']:
+            if _key not in st.session_state:
+                st.session_state[_key] = []
+
      
         
     def handle_deal_click():
@@ -444,14 +484,23 @@ def render_practice_tab(lang):
         is_ai_match = False
         current_action = None
         
-        # A. 余额不足拦截
-        if st.session_state.balance < 100:
-            is_cn = st.session_state.get('lang') == "CN"
-            msg = "余额不足，发牌停止。" if is_cn else "Insufficient balance, dealing stopped."
-            st.warning(msg)
-            st.session_state.auto_run_active = False 
-            return
-            
+        # B. 检查余额 - 仅在已初始化后才校验
+        if st.session_state.get('bac_pro_v8_final'):
+            try:
+                _uid = st.session_state.get('auth_user', '').upper()
+                _adapter = st.session_state.get('record_adapter')
+                if _adapter and _uid:
+                    _val = _adapter.client.hget(f"u:info:{_uid}", "balance")
+                    st.session_state.balance = float(_val) if _val is not None else 0.0
+            except Exception:
+                pass
+
+            if st.session_state.get('balance', 0) < 100:
+                msg = "余额不足，无法开启新靴。" if is_cn else "Insufficient balance for new shoe."
+                st.error(msg)
+                st.stop()
+                return
+        
         if 'styled_results' not in st.session_state: st.session_state.styled_results = []
         if 'clean_results' not in st.session_state: st.session_state.clean_results = []
 
@@ -657,16 +706,22 @@ def render_practice_tab(lang):
 
         st.markdown(f"**{ui_title}**", help=ui_help)
 
-        # A. 扫描深度
-        st.session_state.hist_min_slider = st.sidebar.slider(
-            label=label_hmin, min_value=1, max_value=12, 
-            value=st.session_state.get('hist_min_slider', 3), key="h_min_slider"
+
+
+        # Scanning Depth → 控制 snapshot / STATE_HASH 构建
+        if 'h_min_slider' not in st.session_state:
+            st.session_state.h_min_slider = 3
+        st.sidebar.slider(
+            label=label_hmin, min_value=1, max_value=12,
+            key="h_min_slider"
         )
 
-        # B. 长度门槛 (bet_len)
-        st.session_state.bet_len_slider_input = st.sidebar.slider(
-            label=label_blen, min_value=1, max_value=10, 
-            value=st.session_state.get('bet_len_slider_input', 3)
+        # Betting Threshold → 控制下注参数
+        if 'bet_len_slider_input' not in st.session_state:
+            st.session_state.bet_len_slider_input = 3
+        st.sidebar.slider(
+            label=label_blen, min_value=1, max_value=10,
+            key="bet_len_slider_input"
         )
 
 
