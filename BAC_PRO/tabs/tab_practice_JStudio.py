@@ -1,10 +1,11 @@
 # ---------------------------------------------------------
-# tab_practice_JStudio——V7.py
+# tab_practice_JStudio——V8.py
 #完全测试后的S1_STRATEGY_LIB下注策略， Bet最小注的起点开始下注和比对，否则忽略 V3
 #这里增加同一个DEAL共享一次查询结果 V4
 #增加AUTO STRATEGY V5
 #增加用户功能限制 V6
-#增加HIST_LEN+BET_LEN的容器集成
+#增加HIST_LEN+BET_LEN的容器集成 V7
+#HIST_LEN+BET_LEN的容器中加入 S1-Srategy  V8
 # ---------------------------------------------------------
 import streamlit as st
 import os
@@ -271,6 +272,11 @@ def execute_strategy_bet(side, edge=0):
     current_strat = st.session_state.get('current_strategy_key', "100")
 
     if current_strat == "AUTO":
+
+        # 🔒 防止重复执行
+        if st.session_state.get("auto_bet_locked", False):
+            return
+
         # ✅ 动态单注码，每注实时由 Edge 决定
         if edge >= 0.05:
             current_amt = 700
@@ -283,11 +289,11 @@ def execute_strategy_bet(side, edge=0):
         elif edge >= 0.01:
             current_amt = 100
         else:
-            # ✅ Edge 不足：视为策略组结束，等同于 counter >= 3
+            # Edge 不足 → 结束策略
             st.session_state.streak_counter = 3
-        
             return
 
+        # ✅ 写入下注
         if side == 'B':
             st.session_state.bet_input_red = current_amt
             st.session_state.bet_input_blue = 0
@@ -298,7 +304,11 @@ def execute_strategy_bet(side, edge=0):
         # ✅ 上锁 + 锁定方向
         st.session_state.streak_bet_locked = True
         st.session_state.active_streak_side = side
-        
+
+        # 🔒 AUTO锁（必须加）
+        st.session_state.auto_bet_locked = True
+
+
     else:
         # ✅ 固定矩阵策略
         amounts = S1_STRATEGY_LIB.get(current_strat, [100, 0, 0])
@@ -322,14 +332,21 @@ def execute_strategy_bet(side, edge=0):
             
 def render_practice_tab(lang):
     def render_ai_config_panel(label_hmin, label_blen):
+
         # 初始化默认值
         if 'hist_min_slider' not in st.session_state:
-            st.session_state.hist_min_slider = 3
+            st.session_state.hist_min_slider = 4
         if 'bet_len_slider_input' not in st.session_state:
-            st.session_state.bet_len_slider_input = 1
+            st.session_state.bet_len_slider_input = 4
+        if "auto_bet_locked" not in st.session_state:
+            st.session_state.auto_bet_locked = False
 
-        # ✅ 用 form 包裹（关键）
+        # =========================
+        # ✅ AI CONFIG FORM（统一入口）
+        # =========================
         with st.sidebar.form("ai_config_form"):
+
+            # --- HIST LEN ---
             h_min = st.slider(
                 label=label_hmin,
                 min_value=1,
@@ -337,6 +354,7 @@ def render_practice_tab(lang):
                 value=st.session_state.hist_min_slider
             )
 
+            # --- BET LEN ---
             b_len = st.slider(
                 label=label_blen,
                 min_value=1,
@@ -344,11 +362,33 @@ def render_practice_tab(lang):
                 value=st.session_state.bet_len_slider_input
             )
 
+            # =========================
+            # 🔥 新增：S1 STRATEGY 纳入 FORM
+            # =========================
+            is_cn = st.session_state.get('lang', 'CN') == "CN"
+
+            label_s1_strat = "投注策略矩阵" if is_cn else "Betting Strategy Matrix"
+
+            strat_options = ["100", "110", "111", "121", "137", "AUTO"]
+
+            selected_strat = st.selectbox(
+                label=label_s1_strat,
+                options=strat_options,
+                index=strat_options.index(
+                    st.session_state.get("current_strategy_key", "100")
+                )
+            )
+
             submitted = st.form_submit_button("APPLY")
 
             if submitted:
+                # --- hist / bet ---
                 st.session_state.hist_min_slider = h_min
                 st.session_state.bet_len_slider_input = b_len
+
+                # --- strategy ---
+                st.session_state.current_strategy_key = selected_strat
+                st.session_state.strategy_mode = f"S1-{selected_strat}"
                 
     # --- 1. 全量变量保底初始化 (防止 AttributeError) ---
     # 在 initial_keys 或变量初始化区域添加
@@ -710,7 +750,13 @@ def render_practice_tab(lang):
 
             except IndexError:
                 st.session_state.end_shoe = True
-    
+            # 下注输入框归零
+            st.session_state.bet_input_red = 0
+            st.session_state.bet_input_blue = 0
+
+            # 🔓 释放 AUTO 锁（关键）
+            st.session_state.auto_bet_locked = False    
+            
 
     with st.sidebar:
         # --- 侧边栏：AI 策略配置 (多语言适配版) ---
@@ -731,30 +777,6 @@ def render_practice_tab(lang):
         render_ai_config_panel(label_hmin, label_blen)
 
 
-        # --- 侧边栏：S1 策略矩阵配置 ---
-        is_cn = st.session_state.get('lang', 'CN') == "CN"
-
-        # 1. 定义多语言文案
-        label_s1_strat = "投注策略矩阵" if is_cn else "Betting Strategy Matrix"
-        help_s1 = "选择连续 3 注的注码分配方案 (S1 规范)" if is_cn else "Select betting distribution for 3 consecutive bets (S1 Standard)."
-
-        # 2. 策略选项定义
-        strat_options = ["100", "110", "111", "121", "137", "AUTO"]
-
-        # 3. 渲染下拉选择框
-        selected_strat = st.sidebar.selectbox(
-            label=label_s1_strat,
-            options=strat_options,
-            index=0,  # 默认指向 "100"
-            help=help_s1
-        )
-
-        # 4. 状态同步
-        # current_strategy_key 用于逻辑计算提取 STRATEGY_LIB 的值
-        st.session_state.current_strategy_key = selected_strat 
-
-        # strategy_mode 用于 UI 显示或 Redis 存证
-        st.session_state.strategy_mode = f"S1-{selected_strat}"
 
         
 # --- 5.A 顶部：下注区分割线 (保持不变) ---
@@ -786,27 +808,32 @@ def render_practice_tab(lang):
                 </div>
             </div>
         """, unsafe_allow_html=True)
+        #####--------------------新修改V8----------------
 
-
-        # --- 🛠️ 关键修改点：移除 key 绑定，改用变量赋值 ---
-        # 只有这样做，handle_deal_click 里的 st.session_state.bet_input_red = 0 才能生效而不报错
-        # --- 🛠️ 必须这样写：去掉 key 参数，改用变量接收返回值 ---
-
-        st.session_state.bet_input_red = st.number_input(
-            "B", # 这个 Label 必须保留，供下方 CSS 选择器识别
+                # --- UI 输入（不直接写 session_state） ---
+        ui_b = st.number_input(
+            "B",
             value=float(st.session_state.get('bet_input_red', 0)),
             step=100.0,
-            format="%.0f",
-            key=None # 显式设为 None 或直接不写 key 参数
+            format="%.0f"
         )
 
-        st.session_state.bet_input_blue = st.number_input(
+        ui_p = st.number_input(
             "P", 
             value=float(st.session_state.get('bet_input_blue', 0)),
             step=100.0,
-            format="%.0f",
-            key=None # 显式设为 None 或直接不写 key 参数
+            format="%.0f"
         )
+
+        # --- 只有用户改了才写回 ---
+        if ui_b != st.session_state.get('bet_input_red', 0):
+            st.session_state.bet_input_red = ui_b
+
+        if ui_p != st.session_state.get('bet_input_blue', 0):
+            st.session_state.bet_input_blue = ui_p
+
+        #####--------------------新修改V8结束----------------
+            
         # --- 5.C 核心样式注入 (CSS 逻辑保持不变) ---
         st.markdown("""
         <style>
@@ -845,6 +872,13 @@ def render_practice_tab(lang):
             }
         </style>
         """, unsafe_allow_html=True)
+
+
+
+
+
+
+        
 
         # --- 5.E 剩余牌数与投注记录 ---
         remaining = len(st.session_state.shoe)
