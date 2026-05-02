@@ -1,9 +1,10 @@
 # ---------------------------------------------------------
-# tab_practice_JStudio——V6.py
+# tab_practice_JStudio——V7.py
 #完全测试后的S1_STRATEGY_LIB下注策略， Bet最小注的起点开始下注和比对，否则忽略 V3
 #这里增加同一个DEAL共享一次查询结果 V4
 #增加AUTO STRATEGY V5
 #增加用户功能限制 V6
+#增加HIST_LEN+BET_LEN的容器集成
 # ---------------------------------------------------------
 import streamlit as st
 import os
@@ -223,7 +224,7 @@ def process_betting_logic():
 
     # ✅ 门禁 2：同 Streak 唯一策略组约束
     if st.session_state.get('active_streak_side') == cur_side:
-        print(f"[S1 STRATEGY] 🔒 Already active on {cur_side}, new MATCH ignored.")
+        
         return
 
     # ✅ 门禁 3：缓存优先，同一 hash 不重复打 Redis
@@ -233,7 +234,7 @@ def process_betting_logic():
         # 命中缓存，直接复用
         decision = shared_payload['decision']
         state_hash = shared_payload['hash']
-        print(f"[PROCESS BETTING] ✅ Cache Hit: {state_hash}")
+        
     else:
         # 缓存未命中，检查是否同一 hash 已查过（NO MATCH）
         adapter = st.session_state.get('redis_adapter')
@@ -256,11 +257,6 @@ def process_betting_logic():
     if decision and decision.get('action'):
         raw_act = str(decision['action']).upper()
         edge = decision.get('edge', 0)
-
-        print(f"\n[AI INSTRUCTION] 🎯 MATCH FOUND!")
-        print(f"  └─ Hash: {state_hash}")
-        print(f"  └─ Action: {raw_act} | Edge: {edge:+.2%}")
-        print(f"  └─ Side: {cur_side} (Len: {cur_len})")
 
         if "S" in raw_act:
             target_side = cur_side
@@ -289,7 +285,7 @@ def execute_strategy_bet(side, edge=0):
         else:
             # ✅ Edge 不足：视为策略组结束，等同于 counter >= 3
             st.session_state.streak_counter = 3
-            print(f"[BET FOR NEXT] ⏩ AUTO SKIP: Edge {edge:.2%} too low - Streak ended.")
+        
             return
 
         if side == 'B':
@@ -302,8 +298,7 @@ def execute_strategy_bet(side, edge=0):
         # ✅ 上锁 + 锁定方向
         st.session_state.streak_bet_locked = True
         st.session_state.active_streak_side = side
-        print(f"[BET FOR NEXT] 💰 AUTO: Side={side} | Amount={current_amt} | Edge={edge:+.2%} | Step={st.session_state.get('streak_counter', 0)+1}/3")
-
+        
     else:
         # ✅ 固定矩阵策略
         amounts = S1_STRATEGY_LIB.get(current_strat, [100, 0, 0])
@@ -323,11 +318,38 @@ def execute_strategy_bet(side, edge=0):
                 # ✅ 上锁 + 锁定方向
                 st.session_state.streak_bet_locked = True
                 st.session_state.active_streak_side = side
-                print(f"[BET FOR NEXT] 💰 S1: Side={side} | Amount={current_amt} | Step={counter+1}/3 | Strat={current_strat}")
-            else:
-                print(f"[BET FOR NEXT] ⏩ SKIP: Amount=0 at Step {counter+1}")
+
             
 def render_practice_tab(lang):
+    def render_ai_config_panel(label_hmin, label_blen):
+        # 初始化默认值
+        if 'hist_min_slider' not in st.session_state:
+            st.session_state.hist_min_slider = 3
+        if 'bet_len_slider_input' not in st.session_state:
+            st.session_state.bet_len_slider_input = 1
+
+        # ✅ 用 form 包裹（关键）
+        with st.sidebar.form("ai_config_form"):
+            h_min = st.slider(
+                label=label_hmin,
+                min_value=1,
+                max_value=12,
+                value=st.session_state.hist_min_slider
+            )
+
+            b_len = st.slider(
+                label=label_blen,
+                min_value=1,
+                max_value=10,
+                value=st.session_state.bet_len_slider_input
+            )
+
+            submitted = st.form_submit_button("APPLY")
+
+            if submitted:
+                st.session_state.hist_min_slider = h_min
+                st.session_state.bet_len_slider_input = b_len
+                
     # --- 1. 全量变量保底初始化 (防止 AttributeError) ---
     # 在 initial_keys 或变量初始化区域添加
     if 'streak_counter' not in st.session_state: st.session_state.streak_counter = 0
@@ -381,7 +403,7 @@ def render_practice_tab(lang):
         # --- A. 自动续靴逻辑 (保持不变) ---
         if st.session_state.get('end_shoe', False):
             if st.session_state.auto_run_active:
-                st.session_state.shoe_count += 1 
+                st.session_state.shoe_count += 1
                 if st.session_state.shoe_count >= st.session_state.get('max_shoes', 10):
                     st.session_state.auto_run_active = False
                     return 
@@ -423,7 +445,6 @@ def render_practice_tab(lang):
         st.session_state.results = []
         st.session_state.clean_results = []
         st.session_state.styled_results = []
-        st.session_state.bet_history = []
         st.session_state.stats = {"B": 0, "P": 0, "T": 0}
         st.session_state.rank_counts = {i: (128 if i == 0 else 32) for i in range(10)}
         st.session_state.last_outcome_obj = None
@@ -473,7 +494,8 @@ def render_practice_tab(lang):
         
 
         # 基础列表兜底
-        for _key in ['clean_results', 'styled_results', 'results', 'bet_history']:
+        for _key in ['clean_results', 'styled_results', 'results']:
+        ###for _key in ['clean_results', 'styled_results', 'results', 'bet_history']:
             if _key not in st.session_state:
                 st.session_state[_key] = []
 
@@ -537,7 +559,7 @@ def render_practice_tab(lang):
                 oc = st.session_state.dealer.deal_one_hand(st.session_state.shoe)
                 st.session_state.last_outcome_obj = oc
                 res = oc.winner
-                print(f"\n[BACKEND-3] 最新发牌结果: {res}")
+                
 
                 # --- 4. 结算 ---
                 new_bal, net_profit, _ = settle_hand(res, current_bets, st.session_state.balance)
@@ -548,15 +570,15 @@ def render_practice_tab(lang):
                 if actual_bet_made > 0:
                     if res in ['B', 'P']:  # 严格限制只有 B 或 P 才增加计数
                         st.session_state.streak_counter += 1
-                        print(f"[STRATEGY EXCUTION] ✅ Effective Bet Counted（锁定下注➕开牌/上手的结算）: {st.session_state.streak_counter}/3")
-                    else:
-                        # 遇到 T 时，明确不增加计数器，确保下一手依然使用当前的 Step 注码
-                        print(f"[STRATEGY EXCUTION] 🟡 TIE Detected - Counter held at: {st.session_state.streak_counter}/3")
                         
                 # --- 5. AI 决策判定 (全面拦截版本) ---
                 adapter = st.session_state.get('redis_adapter')
                 h_min = st.session_state.get('h_min_slider', 3) 
                 b_len_threshold = st.session_state.get('bet_len_slider_input', 1) # 获取路长拦截阈值
+
+
+
+                
                 
                 if adapter and res in ['B', 'P']:
                     # 构造包含刚刚出的结果的序列 (原有逻辑)
@@ -592,19 +614,19 @@ def render_practice_tab(lang):
                             if "CU" in raw_val or raw_val == "C": current_action = "C"
                             elif "CO" in raw_val or raw_val == "S": current_action = "S"
                             else: current_action = "?"
-                            
+                        
                             # --- 【新增需求 2】：共享比对结果给 UI ---
                             shared_payload["decision"] = decision
                             shared_payload["status"] = "MATCHED"
                         else:
                             is_ai_match = False
                             shared_payload["status"] = f"NO MATCH ({check_len})"
-                            print(f"[BACKEND-2] ⚪ NO MATCH at length {check_len}")
+                            
                     else:
                         # 长度不达标，完全不触发比对 (原有逻辑)
                         is_ai_match = False
                         shared_payload["status"] = f"WAITING ({check_len}/{b_len_threshold})"
-                        # print(f"[BACKEND-2] Blocked: {check_len} < {b_len_threshold}")
+                        
 
                     # --- 【核心共享点】：存入 session_state 供 UI 侧边栏读取 ---
                     st.session_state['shared_ai_data'] = shared_payload
@@ -636,6 +658,7 @@ def render_practice_tab(lang):
                             bet_len=betting_moment_len, 
                             action=act  
                         )
+                       
                     except Exception as e:
                         print(f"Redis Sync Error: {e}")
 
@@ -663,7 +686,7 @@ def render_practice_tab(lang):
                             st.session_state.streak_counter = 0
                             st.session_state.active_streak_side = None
                             st.session_state.streak_bet_locked = False
-                            print("[S1 STRATEGY] 🔄 Road Changed - Full Reset")
+                            
                         else:
                             # ✅ 同路：按策略决定是否解锁
                             strat_key = st.session_state.get('current_strategy_key', '100')
@@ -680,8 +703,6 @@ def render_practice_tab(lang):
                                     st.session_state.streak_bet_locked = False
                                 # 否则保持锁定，等变路
 
-                if actual_bet_made > 0:
-                    st.session_state.bet_history.append({"hand_no": len(st.session_state.results), "winner": oc.winner, "net": net_profit})
                 
                 # 下注输入框归零
                 st.session_state.bet_input_red = 0
@@ -706,23 +727,8 @@ def render_practice_tab(lang):
 
         st.markdown(f"**{ui_title}**", help=ui_help)
 
-
-
-        # Scanning Depth → 控制 snapshot / STATE_HASH 构建
-        if 'h_min_slider' not in st.session_state:
-            st.session_state.h_min_slider = 3
-        st.sidebar.slider(
-            label=label_hmin, min_value=1, max_value=12,
-            key="h_min_slider"
-        )
-
-        # Betting Threshold → 控制下注参数
-        if 'bet_len_slider_input' not in st.session_state:
-            st.session_state.bet_len_slider_input = 3
-        st.sidebar.slider(
-            label=label_blen, min_value=1, max_value=10,
-            key="bet_len_slider_input"
-        )
+        #渲染HIST_LEN , BET_LEN 参数
+        render_ai_config_panel(label_hmin, label_blen)
 
 
         # --- 侧边栏：S1 策略矩阵配置 ---
@@ -839,11 +845,6 @@ def render_practice_tab(lang):
             }
         </style>
         """, unsafe_allow_html=True)
-        # --- 5.D 物理输入框区 ---
-        #sb2, sb1 = st.columns(2)
-        # 这里的 "B" 和 "P" 是 CSS 识别的关键钥匙
-        #bet_b = sb1.number_input("B", min_value=0, step=100, key="bet_input_red")
-        #bet_p = sb2.number_input("P", min_value=0, step=100, key="bet_input_blue")
 
         # --- 5.E 剩余牌数与投注记录 ---
         remaining = len(st.session_state.shoe)
@@ -1032,7 +1033,6 @@ def render_practice_tab(lang):
     # 核心同步逻辑：检测到模式切换（本地转云端或反之），立即销毁旧实例
     if 'last_redis_mode' in st.session_state and st.session_state.last_redis_mode != current_mode_str:
         st.session_state.pop('redis_adapter', None)
-        print(f"🔄 [GLOBAL] 模式强制同步: {st.session_state.last_redis_mode} -> {current_mode_str}")
 
     # 执行单点初始化
     if 'redis_adapter' not in st.session_state:
@@ -1135,7 +1135,7 @@ def render_practice_tab(lang):
 
         # 2. 状态逻辑初始化 (必须在 HTML 拼接前完成)
         clean_seq = st.session_state.get('clean_results', [])
-        h_min = st.session_state.get('hist_min', 3) 
+        h_min = st.session_state.get('h_min_slider', 3) 
         fp_advice = {"match": False, "status": "WAITING", "fp_id": ""}
         
         # 获取由 col_left 已经统一初始化好的连接
