@@ -15,7 +15,13 @@ class RedisAdapter:
             )
         except Exception as e:
             print(f"Redis Connection Error: {e}")
-            
+    def log_bet(self, payload: dict):
+        """
+        预留扩展：AUTORUN 下注流水专用写入接口
+        TODO: 实现 AUTORUN 独立数据表写入逻辑
+        """
+        pass
+
     # --- ✨ 新增：专门查询 Entropy JSON 数据的函数 ---
     def get_entropy_decision(self, rk_id):
         """
@@ -79,8 +85,8 @@ class RedisAdapter:
             return None
 
 # === 今日新增：下注流水写入逻辑（对齐老版本变量名 self.client） ===
+    def record_app_transaction(self,user_id,username,amount,tx_type,strategy,hist_len,bet_len,action,side=None,streak_side=None):
 
-    def record_app_transaction(self, user_id, username, amount, tx_type, strategy, hist_len, bet_len, action):
         """
         核心写入函数：处理余额更新与流水存档。
         使用了 self.client 确保与你的初始化变量名一致。
@@ -94,7 +100,7 @@ class RedisAdapter:
         try:
             # 🟢 控制台调试：如果你在终端运行，这里会显示数据飞往哪个库
             conn_info = self.client.connection_pool.connection_kwargs
-            print(f"📡 [DEBUG] Redis Writing to: {conn_info.get('host')} | TX: {tx_id}")
+            print(f"📡 [结算上一手下注] Redis Writing to: {conn_info.get('host')} | TX: {tx_id}")
 
             # 2. 开启管道 (Pipeline) 保证原子性
             pipe = self.client.pipeline()
@@ -117,12 +123,14 @@ class RedisAdapter:
                 "action": norm_action,
                 "hist_len": hist_len,
                 "bet_len": bet_len,
+                "side": side,
+                "streak_side": streak_side,
                 "amount": val,
                 "balance": new_balance,
                 "datetime": now,
                 "txID": tx_id
             }
-            
+
             # 6. 写入 Hash 详情并推入用户流水列表
             pipe.hset(f"tx:{tx_id}", mapping=tx_data)
             pipe.lpush(f"u:tx_list:{user_id}", tx_id)
@@ -135,21 +143,24 @@ class RedisAdapter:
         except Exception as e:
             print(f"❌ Redis Write Error: {e}")
             return None
+    def sync_transaction(self,uid,username,amount,tx_type,strategy,h_len,b_len,action,side=None,streak_side=None):
 
-    def sync_transaction(self, uid, username, amount, tx_type, strategy, h_len, b_len, action):
         """
         备用入口：直接指向主写入函数
         """
         return self.record_app_transaction(
-            user_id=uid, 
-            username=username, 
-            amount=amount, 
-            tx_type=tx_type, 
-            strategy=strategy, 
-            hist_len=h_len, 
-            bet_len=b_len, 
-            action=action
+            user_id=uid,
+            username=username,
+            amount=amount,
+            tx_type=tx_type,
+            strategy=strategy,
+            hist_len=h_len,
+            bet_len=b_len,
+            action=action,
+            side=side,
+            streak_side=streak_side
         )
+
 def generate_fp_hash(cur_side, cur_len, hist_B, hist_P, hist_min=3):
     """
     V8 物理对齐正式版
