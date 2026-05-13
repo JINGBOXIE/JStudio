@@ -1,7 +1,9 @@
+# 增加REPLAY功能-V9
 import streamlit as st
 import os
 import sys
 import base64
+from BAC_PRO.core.replay_manager import ReplayManager
 if 'bac_menu_choice' not in st.session_state:
     st.session_state.bac_menu_choice = None
 # 1. 确保 CURRENT_DIR 被定义
@@ -10,6 +12,7 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 # 2. 将必要的路径加入 sys.path
 # 包含根目录和 BAC_PRO 目录，确保能找到 modules 文件夹
 paths_to_add = [CURRENT_DIR, os.path.join(CURRENT_DIR, "BAC_PRO")]
+os.path.join(CURRENT_DIR, "BAC_PRO", "core")  # 🔥新增这一行
 for p in paths_to_add:
     if p not in sys.path:
         sys.path.insert(0, p)
@@ -62,8 +65,7 @@ st.set_page_config(
     layout="wide", 
     page_title="J Studio | Gaming Logic", 
     page_icon="🤖"
-)
-
+)        
 if 'lang' not in st.session_state: st.session_state.lang = "EN"
 if 'auth_user' not in st.session_state: st.session_state.auth_user = None
 if 'menu_choice' not in st.session_state: st.session_state.menu_choice = "PORTAL"
@@ -77,9 +79,9 @@ L_MAP = {
         "welcome": "简单➕专注", 
         "select": "请选择左侧功能模块开始体验",
         # 新增以下三行
-        "nav_im": "iMarket-投资AI引擎", 
-        "nav_bp": "iBACCARAT-投注AI引擎", 
-        "nav_gw": "博弈逻辑"
+        "nav_im": "Nexus-个人投资AI引擎", 
+        "nav_bp": "Vortex-百家乐投注AI引擎", 
+        "nav_gw": "Ethos-博弈逻辑训练"
     },
     "EN": {
         "exit": "EXIT", 
@@ -88,9 +90,9 @@ L_MAP = {
         "welcome": "J STUDIO | SIMPLICITY ◈ FOCUS", 
         "select": "Select Functional Engine from sidebar",
         # 新增以下三行
-        "nav_im": "iMarket - AI ENGINE", 
-        "nav_bp": "iBACCARAT- AI ENGINE", 
-        "nav_gw": "GAMING LOGIC"
+        "nav_im": "Nexus-iMARKET", 
+        "nav_bp": "Vortex-iBACCARAT", 
+        "nav_gw": "Ethos-GAMMING LOGIC"
     }
 }
 
@@ -265,14 +267,14 @@ if st.session_state.menu_choice == "PORTAL":
     st.markdown(f"<h2 style='text-align:center; color:#d4af37;'>{L_MAP[st.session_state.lang]['welcome']}</h2>", unsafe_allow_html=True)
     st.write("---")
     c1, c2, c3 = st.columns(3)
-    if c1.button("iMarket Engine", width="stretch", key="p_im"):
+    if c1.button("Nexus-iMARKET", width="stretch", key="p_im"):
         st.session_state.menu_choice = "IMARKET"; st.rerun()
-    if c2.button("iBACCARAT Engine", width="stretch", key="p_bp"):
+    if c2.button("Vortex-iBACCARAT", width="stretch", key="p_bp"):
         st.session_state.menu_choice = "BAC_PRO"
         st.session_state.bac_menu_choice = None # 确保进入介绍页
         st.rerun()
 
-    if c3.button("iGame Logic", width="stretch", key="p_gw"):
+    if c3.button("Ethos-GAMMING LOGIC", width="stretch", key="p_gw"):
         st.session_state.menu_choice = "BOOK"; st.rerun()
     st.divider()
     
@@ -302,6 +304,13 @@ elif st.session_state.menu_choice == "BAC_PRO":
         with sub_sidebar_slot:
             m_bp.render_bac_pro_sidebar(st.session_state.lang)
     
+    # ⭐⭐⭐ 这里加 ReplayManager ⭐⭐⭐
+
+    with sub_sidebar_slot:
+
+
+        ReplayManager.render_sidebar()
+        
     # 获取当前的子菜单选择
     cur_bac_choice = st.session_state.get('bac_menu_choice')
     

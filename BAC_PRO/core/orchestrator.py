@@ -5,6 +5,13 @@ from core.db_adapter import RedisAdapter
 from core.execution_center import ExecutionCenter
 from core.settlement_center import SettlementCenter
 
+# =========================================================
+# ⚙️ 全局配置控制
+# =========================================================
+TIE_KILL = "TIE_KILL"  # 遇到TIE，KILL，结束S1下注，终止下注结果并终止当前帧
+TIE_SKIP = "TIE_SKIP"  # 遇到TIE，SKIP，继续S1下注，维持下注结果并继续后续策略逻辑
+TIE_STRATEGY_MODE = TIE_SKIP
+
 
 class Orchestrator:
     def __init__(self, data_center, decision_center, strategy_engine, redis_record):
@@ -43,21 +50,44 @@ class Orchestrator:
 
         # =========================================================
         # TIE 短路 — 身份证登记后立即判断
-        # 规范：TIE 时不重新计算 HASH，不步进，维持上一手建议不变。
+        # 规范：TIE 时不重新计算 HASH，不步进，维持上一手建议不变
         # =========================================================
         if last_result == "T":
             last_side = clean_seq[-2] if len(clean_seq) > 1 else ""
             executor = ExecutionCenter(session_state, self.redis_record)
+
+            # 1. 执行结算处理（无论什么模式都要记录物理事实）
             self.settlement_center.process(last_result, last_side, session_state)
-            executor._clear_bet()
+
+            # 2. 核心控制分支
+            if TIE_STRATEGY_MODE == TIE_KILL:
+                # --- 模式 1：TIE KILL (彻底熔断) ---
+                # A. 清除物理下注记录与 UI 缓存
+                executor._clear_bet()
+
+                # B. FIX-4: 显式重置策略引擎内部状态，使其回到 SLEEP。
+                #    传入 lock_streak=False：TIE 不属于任何 STREAK，
+                #    只结束 S1 生命周期，不得修改 STREAK 锁（防止 L4 架构污染）。
+                self.strategy_engine._terminate(lock_streak=False)
+
+                sys.stdout.write(
+                    f"🛑 [TIE 熔断] 模式: KILL | 引擎重置 (_terminate, lock_streak=False)"
+                    f" | 物理记录清理\n"
+                )
+            else:
+                # --- 模式 2：TIE SKIP (维持现状) ---
+                sys.stdout.write(
+                    f"⏭️  [TIE 跳过] 模式: SKIP | 引擎与记录均保持 ACTIVE，等待下一手\n"
+                )
+
+            # 3. 更新建议渲染状态
             existing_advice = session_state.get("last_fp_advice", {})
             session_state.last_fp_advice = {**existing_advice, "tie_hold": True}
 
-            sys.stdout.write(
-                f"⏸️  [TIE 短路] B-LOCK 激活，维持上一手建议，本帧终止\n"
-                f"{_SEP}\n"
-            )
+            sys.stdout.write(f"{_SEP}\n")
             sys.stdout.flush()
+
+            # 4. 统一阻断：TIE 帧不进入后续 HASH 匹配逻辑
             return {"decision": None, "engine": {"action": "HOLD"}}
 
         # =========================================================
@@ -78,13 +108,10 @@ class Orchestrator:
         components = self.data_center.get_components(clean_seq, h_min)
         cur_side, cur_len = components[0], components[1]
 
-        # CASE III 修复：写入实际连庄长度，供 ExecutionCenter 快照到 active_bet_record
-        session_state["current_cur_len"]    = cur_len
-        # 报表字段：写入连庄方向，供 ExecutionCenter 快照到 active_bet_record["streak_side"]
-        # CUT 策略下 streak_side != side（如庄连下注闲），CONTINUE 时两者相同
+        # 报表字段写入
+        session_state["current_cur_len"]     = cur_len
         session_state["current_streak_side"] = cur_side
 
-        # CASE V 修复：去掉硬编码的 and (cur_len >= 3)，唯一门槛由 UI 的 bet_len_threshold 控制
         should_match = (cur_len >= bet_len_threshold)
         state_hash = ""
         decision = {"state": "WAIT", "action": None, "edge": 0, "ev_cut": 0, "ev_cont": 0}
@@ -96,8 +123,6 @@ class Orchestrator:
             state_hash = f"DEPTH：{cur_side}{cur_len}"
 
         # ── 方向合成 ────────────────────────────────────────────
-        # decision["action"] 是逻辑指令（CUT/CONTINUE），不是物理方向（B/P）。
-        # 必须结合当前连庄方向 cur_side 转换后再传给引擎。
         def _resolve_side(action: str, side: str) -> str:
             opposite = "P" if side == "B" else "B"
             if action == "CUT":
@@ -128,25 +153,16 @@ class Orchestrator:
         current_edge = decision.get("edge", 0)
 
         # ── STREAK反转检测（必须在start()之前执行）──────────────
-        # unlock_streak() 检查当前帧的cur_side是否与锁定方向不同。
-        # 不同 → 说明STREAK已反转 → 解锁，允许新STREAK开仓。
-        # 相同 → 保持锁定，同方向STREAK不重复开仓。
-        # 注意：必须在start()判断之前调用，否则新STREAK的第一帧
-        # 会因为锁未解除而被跳过。
+        # FIX-5 顺序保证：unlock_streak() 先于 start() 执行。
+        # terminate() 在上一帧已写好 _locked_streak_side（使用的是那一帧的
+        # _active_streak_side），本帧 unlock_streak() 读取该锁并判断是否反转，
+        # 逻辑不会因同帧顺序问题而错乱。
         self.strategy_engine.unlock_streak(cur_side)
 
         # ── 引擎启动判断 ─────────────────────────────────────────
-        # 条件：
-        #   1. 本帧有EXECUTE信号（is_match=True）
-        #   2. 引擎当前不在ACTIVE（避免重复start）
-        #   3. edge > 0（有正向优势才开仓）
-        #   4. _locked_streak_side != cur_side（本STREAK未用过机会）
-        #      — 这是STREAK级别锁，防止同一STREAK内因多次EXECUTE重复开仓
-        #      — unlock_streak()已在上方处理反转解锁，此处只需判断是否锁定
-        if is_match and self.strategy_engine.state != "ACTIVE":
+        if is_match and self.strategy_engine.state not in ("ACTIVE", "B-LOCK"):
             if current_edge > 0:
                 if self.strategy_engine._locked_streak_side == cur_side:
-                    # 本STREAK已用完机会，跳过，不调用start()
                     pass
                 else:
                     self.strategy_engine.start(
@@ -159,7 +175,7 @@ class Orchestrator:
             "last_result": last_result,
             "is_match":    is_match,
             "edge":        current_edge,
-            "action_side": physical_side,
+            "action_side": physical_side,  # FIX-2: on_event内部不再使用此字段更新side
             "is_reversal": False,
         })
 
