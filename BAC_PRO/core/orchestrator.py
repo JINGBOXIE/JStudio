@@ -10,7 +10,7 @@ from core.settlement_center import SettlementCenter
 # =========================================================
 TIE_KILL = "TIE_KILL"  # 遇到TIE，KILL，结束S1下注，终止下注结果并终止当前帧
 TIE_SKIP = "TIE_SKIP"  # 遇到TIE，SKIP，继续S1下注，维持下注结果并继续后续策略逻辑
-TIE_STRATEGY_MODE = TIE_SKIP
+TIE_STRATEGY_MODE = TIE_KILL
 
 
 class Orchestrator:
