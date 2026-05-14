@@ -2,7 +2,10 @@ import streamlit as st
 import os
 import sys
 import re
-import google.generativeai as genai
+
+from google import genai
+
+
 from PIL import Image
 import importlib
 
@@ -27,46 +30,56 @@ except ImportError as e:
     st.error(f"核心模块导入失败: {e}")
     st.code(f"当前搜寻根目录: {ROOT_DIR}\n目录内容: {os.listdir(ROOT_DIR) if os.path.exists(ROOT_DIR) else '路径不存在'}")
 
-# --- 3. 核心调用函数 (已修复逻辑重叠与清洗逻辑) ---
 def call_vision_ai(image_file, prompt_text):
     """
-    调用 Gemini 2.5 视觉引擎并执行深度结果清洗
+    调用最新 Google Gen AI 视觉引擎并执行深度结果清洗
+    (新版 google-genai SDK, Client 复用优化)
     """
+    # 1. 获取配置信息
     model_name, status = ai_manager.configure_engine()
-    
+
     if status != "SUCCESS":
         return f"AI Engine Error: {status}"
-    
+
     try:
-        model = genai.GenerativeModel(model_name)
-        
-        # 确保图片指针在起始位置，防止 Streamlit 多次读取导致空流
+        # 2. 初始化 Client (复用以避免重复建立连接)
+        if "ai_client" not in st.session_state:
+            api_key = os.environ.get("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
+            st.session_state.ai_client = genai.Client(api_key=api_key)
+
+        client = st.session_state.ai_client
+
+        # 3. 处理图片流
         if hasattr(image_file, 'seek'):
             image_file.seek(0)
-            
         img = Image.open(image_file)
-        
-        # 调用 AI 引擎
-        response = model.generate_content([prompt_text, img])
-        
+
+        # 4. 执行 API 调用
+        response = client.models.generate_content(
+            model=model_name,
+            contents=[prompt_text, img]
+        )
+
+        # 5. 结果清洗
         if response and response.text:
             clean_text = response.text.strip()
-            
-            # 1. 循环移除 Markdown 包裹标记 (如 ```json 或 ```text)
-            while clean_text.startswith("```") or clean_text.endswith("```"):
-                clean_text = clean_text.strip("`").strip()
-            
-            # 2. 移除模型可能自带的 "text" 字符串
+
+            # 逐层移除 Markdown 代码块标记 (修复原版 strip("`") 过度剥离问题)
+            while clean_text.startswith("```"):
+                clean_text = re.sub(r'^```\w*\n?', '', clean_text).strip()
+            if clean_text.endswith("```"):
+                clean_text = clean_text[:-3].strip()
+
+            # 移除冗余 "text" 前缀
             if clean_text.lower().startswith("text"):
                 clean_text = clean_text[4:].strip()
-            
-            # 3. 使用正则提取所有的 B/P (解决 "AI found no valid B/P" 问题的核心)
-            # 这样无论 AI 返回 "B, P, B" 还是 "BPB"，都能正确识别
+
+            # 提取所有 B/P 序列
             detected_seq = re.findall(r'[BP]', clean_text.upper())
             return ",".join(detected_seq) if detected_seq else "ERROR: No valid B/P found"
-            
+
         return "ERROR: AI returned an empty response"
-            
+
     except Exception as e:
         return f"AI Logic Error: {str(e)}"
 

@@ -233,7 +233,7 @@ def render_practice_tab(lang):
         if "strategy_engine" in st.session_state:st.session_state.strategy_engine._terminate()
         # 终端调试日志
         import sys
-        sys.stdout.write(">>> [FACTORY] 原材料仓库已归零。准备为新靴进行第一次采样拍照。\n")
+        sys.stdout.write(">>> [FACTORY] The raw material warehouse has been cleared. Preparing for the first sample.\n")
         sys.stdout.flush()
 
     if 'bac_pro_v8_final' not in st.session_state:
@@ -313,11 +313,11 @@ def render_practice_tab(lang):
                 st.session_state.clean_results.append(res)
 
 
-            import sys
-            _SEP = "=" * 48
-            sys.stdout.write(f"\n{_SEP}\n")
-            sys.stdout.write(f"[大路渲染] 🎰 结果: {res} | 数据已回填至 SessionState\n")
-            sys.stdout.flush()
+            #import sys
+            #_SEP = "=" * 48
+            #sys.stdout.write(f"\n{_SEP}\n")
+            #sys.stdout.write(f"[大路渲染] 🎰 结果: {res} | 数据已回填至 SessionState\n")
+            #sys.stdout.flush()
             return res
 
         except IndexError:
@@ -1035,29 +1035,29 @@ def render_practice_tab(lang):
                     edge         = final_advice.get('edge', 0)
                     tie_hold     = final_advice.get('tie_hold', False)
 
-                    import sys
-                    _SEP = "=" * 48
-                    sys.stdout.write(
-                        f"🪖 [退休证] 帧闭环确认\n"
-                        f"           本帧结果 : {res}"
-                        f"  tie_hold={tie_hold}\n"
-                        f"           UI状态   : match={is_match}"
-                        f"  status={status}\n"
-                        f"           建议方向 : action={action}"
-                        f"  edge={edge:+.4f}\n"
-                        f"           → 本帧证件链完整，准备 rerun\n"
-                        f"{_SEP}\n"
-                    )
-                    sys.stdout.flush()
+                    #import sys
+                    #_SEP = "=" * 48
+                    #sys.stdout.write(
+                    #    f"🪖 [退休证] 帧闭环确认\n"
+                    #    f"           本帧结果 : {res}"
+                    #    f"  tie_hold={tie_hold}\n"
+                    #    f"           UI状态   : match={is_match}"
+                    #    f"  status={status}\n"
+                    #    f"           建议方向 : action={action}"
+                    #    f"  edge={edge:+.4f}\n"
+                    #    f"           → 本帧证件链完整，准备 rerun\n"
+                    #    f"{_SEP}\n"
+                    #)
+                    #sys.stdout.flush()
 
                 except Exception as e:
-                    sys.stdout.write(
-                        f"💥 [CRITICAL ERROR] 证件链断裂于本帧\n"
-                        f"           result={res}\n"
-                        f"           error ={str(e)}\n"
-                    )
+                    #sys.stdout.write(
+                    #    f"💥 [CRITICAL ERROR] 证件链断裂于本帧\n"
+                    #    f"           result={res}\n"
+                    #    f"           error ={str(e)}\n"
+                    #)
                     traceback.print_exc()
-                    sys.stdout.flush()
+                    #sys.stdout.flush()
 
                 time.sleep(1.2)
                 st.rerun()

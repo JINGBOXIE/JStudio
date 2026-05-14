@@ -100,7 +100,7 @@ class RedisAdapter:
         try:
             # 🟢 控制台调试：如果你在终端运行，这里会显示数据飞往哪个库
             conn_info = self.client.connection_pool.connection_kwargs
-            print(f"📡 [结算上一手下注] Redis Writing to: {conn_info.get('host')} | TX: {tx_id}")
+            print(f"📡 [Final(Receipt)] Redis Writing to: {conn_info.get('host')} | TX: {tx_id}")
 
             # 2. 开启管道 (Pipeline) 保证原子性
             pipe = self.client.pipeline()

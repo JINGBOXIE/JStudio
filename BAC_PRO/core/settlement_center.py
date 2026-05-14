@@ -28,7 +28,7 @@ class SettlementCenter:
         if not record or not is_locked:
             return None
 
-        print(f"🏦结算清单: Result={last_result}, Locked={is_locked}, Record={record}")
+        #print(f"🏦结算清单: Result={last_result}, Locked={is_locked}, Record={record}")
 
         # 2. 计算盈亏 (P/L)
         p_l = self._calculate_pl(
@@ -54,6 +54,7 @@ class SettlementCenter:
             return amount * 0.95 if bet_side == "B" else amount
         return -amount
 
+
     def _update_strategy_state(self, last_result, bet_side):
         """
         不干预引擎生命周期，仅做只读诊断日志。
@@ -62,21 +63,21 @@ class SettlementCenter:
         if last_result == "T":
 
             print(
-                f"🏦 结算结果确认: 🟢TIE detected "
+                f"🏦 Confirmed: 🟢TIE detected "
                 f"(bet={bet_side}, result={last_result})"
             )
 
         elif last_result == bet_side:
 
             print(
-                f"🏦 结算结果确认: 🥇WIN detected "
+                f"🏦 Confirmed: 🥇WIN detected "
                 f"(bet={bet_side}, result={last_result})"
             )
 
         else:
 
             print(
-                f"🏦 结算结果确认: ❌LOSS detected "
+                f"🏦 Confirmed: ❌LOSS detected "
                 f"(bet={bet_side}, result={last_result})"
             )
 

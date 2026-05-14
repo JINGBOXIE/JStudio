@@ -32,9 +32,9 @@ class Orchestrator:
 
         import sys
         _SEP = "=" * 48
-        sys.stdout.write(f"\n{_SEP}\n")
-        sys.stdout.write(f"🎰 [出生纸] 物理结果落地 : {last_result}\n")
-        sys.stdout.flush()
+        #sys.stdout.write(f"\n{_SEP}\n")
+        #sys.stdout.write(f"🎰 [出生纸] 物理结果落地 : {last_result}\n")
+        #sys.stdout.flush()
 
         # =========================================================
         # 🪪 【身份证】序列登记 - update_seq 必须最先执行
@@ -42,11 +42,11 @@ class Orchestrator:
         # =========================================================
         clean_seq = self.data_center.update_seq(last_result)
 
-        sys.stdout.write(
-            f"🪪 [身份证] 序列入籍完成 : len={len(clean_seq)}"
-            f"  tail={clean_seq[-4:]}\n"
-        )
-        sys.stdout.flush()
+        #sys.stdout.write(
+        #    f"🪪 [身份证] 序列入籍完成 : len={len(clean_seq)}"
+        #    f"  tail={clean_seq[-4:]}\n"
+        #)
+        #sys.stdout.flush()
 
         # =========================================================
         # TIE 短路 — 身份证登记后立即判断
@@ -70,22 +70,22 @@ class Orchestrator:
                 #    只结束 S1 生命周期，不得修改 STREAK 锁（防止 L4 架构污染）。
                 self.strategy_engine._terminate(lock_streak=False)
 
-                sys.stdout.write(
-                    f"🛑 [TIE 熔断] 模式: KILL | 引擎重置 (_terminate, lock_streak=False)"
-                    f" | 物理记录清理\n"
-                )
-            else:
+                #sys.stdout.write(
+                #    f"🛑 [TIE 熔断] 模式: KILL | 引擎重置 (_terminate, lock_streak=False)"
+                #    f" | 物理记录清理\n"
+                #)
+            #else:
                 # --- 模式 2：TIE SKIP (维持现状) ---
-                sys.stdout.write(
-                    f"⏭️  [TIE 跳过] 模式: SKIP | 引擎与记录均保持 ACTIVE，等待下一手\n"
-                )
+                #sys.stdout.write(
+                #    f"⏭️  [TIE 跳过] 模式: SKIP | 引擎与记录均保持 ACTIVE，等待下一手\n"
+                #)
 
             # 3. 更新建议渲染状态
             existing_advice = session_state.get("last_fp_advice", {})
             session_state.last_fp_advice = {**existing_advice, "tie_hold": True}
 
-            sys.stdout.write(f"{_SEP}\n")
-            sys.stdout.flush()
+            #sys.stdout.write(f"{_SEP}\n")
+            #sys.stdout.flush()
 
             # 4. 统一阻断：TIE 帧不进入后续 HASH 匹配逻辑
             return {"decision": None, "engine": {"action": "HOLD"}}
@@ -133,18 +133,18 @@ class Orchestrator:
 
         physical_side = _resolve_side(decision.get("action", ""), cur_side)
 
-        sys.stdout.write(
-            f"🎓 [学生证] HASH 比对完成\n"
-            f"           hash      : {state_hash}\n"
-            f"           cur       : {cur_side}{cur_len}"
-            f"  should_match={should_match}\n"
-            f"           decision  : state={decision['state']}"
-            f"  action={decision.get('action')}"
-            f"  edge={decision.get('edge', 0):+.4f}\n"
-            f"           →物理方向 : {decision.get('action')} + {cur_side}"
-            f" = {physical_side}\n"
-        )
-        sys.stdout.flush()
+        #sys.stdout.write(
+        #    f"🎓 [学生证] HASH 比对完成\n"
+        #    f"           hash      : {state_hash}\n"
+        #    f"           cur       : {cur_side}{cur_len}"
+        #    f"  should_match={should_match}\n"
+        #    f"           decision  : state={decision['state']}"
+        #    f"  action={decision.get('action')}"
+        #    f"  edge={decision.get('edge', 0):+.4f}\n"
+        #    f"           →物理方向 : {decision.get('action')} + {cur_side}"
+        #    f" = {physical_side}\n"
+        #)
+        #sys.stdout.flush()
 
         # =========================================================
         # 💼 【工作证】策略引擎指令
@@ -181,18 +181,18 @@ class Orchestrator:
 
         executor.execute(engine_output)
 
-        sys.stdout.write(
-            f"💼 [工作证] 引擎指令下发\n"
-            f"           engine   : action={engine_output.get('action')}"
-            f"  amount={engine_output.get('amount', '—')}"
-            f"  side={engine_output.get('side', '—')}"
-            f"  step={engine_output.get('step', '—')}\n"
-            f"           eng.state: {self.strategy_engine.state}"
-            f"  step_index={self.strategy_engine.step_index}\n"
-            f"           streak_lock: {self.strategy_engine._locked_streak_side}\n"
-            f"{_SEP}\n"
-        )
-        sys.stdout.flush()
+        #sys.stdout.write(
+        #    f"💼 [工作证] 引擎指令下发\n"
+        #    f"           engine   : action={engine_output.get('action')}"
+        #    f"  amount={engine_output.get('amount', '—')}"
+        #    f"  side={engine_output.get('side', '—')}"
+        #    f"  step={engine_output.get('step', '—')}\n"
+        #    f"           eng.state: {self.strategy_engine.state}"
+        #    f"  step_index={self.strategy_engine.step_index}\n"
+        #    f"           streak_lock: {self.strategy_engine._locked_streak_side}\n"
+        #    f"{_SEP}\n"
+        #)
+        #sys.stdout.flush()
 
         # =========================================================
         # Step 5: 建议渲染 - 写入 UI 所需完整字段
