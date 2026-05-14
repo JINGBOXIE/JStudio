@@ -105,7 +105,7 @@ def render_practice_tab(lang):
             )
 
             # --- 3. STRATEGY MATRIX ---
-            strat_options = ["000", "100", "110", "120", "111", "121", "137", "AUTO"]
+            strat_options = ["000", "100", "110", "120", "111", "121", "137", "AUTO","XYZ"]
             current_strat = st.session_state.current_strategy_key
             strat_index = strat_options.index(current_strat) if current_strat in strat_options else 0
 
