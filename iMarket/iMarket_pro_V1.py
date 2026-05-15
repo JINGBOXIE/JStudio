@@ -93,24 +93,57 @@ def get_safe_earnings_date(symbol):
 
 
 # --- 稳健型价格抓取函数 ---
+@st.cache_data(ttl=60, show_spinner=False)  # 缓存 60 秒，避免同一股票重复请求
 def get_stock_data(ticker):
+    """
+    四层降级链：
+    Layer 1: fast_info (最快，云端最稳定)
+    Layer 2: history("2d") 取最新收盘价
+    Layer 3: download() 单独拉一次
+    Layer 4: 返回 0.0 并标记 Data Error
+    """
+    stock = yf.Ticker(ticker)
+
+    # --- Layer 1: fast_info (绕过 info 的限流问题) ---
     try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        current_price = info.get('currentPrice') or info.get('regularMarketPrice')
-        prev_close = info.get('previousClose')
+        fi = stock.fast_info
+        current_price = getattr(fi, 'last_price', None)
+        prev_close    = getattr(fi, 'previous_close', None)
 
-        if current_price is None or (isinstance(current_price, float) and np.isnan(current_price)):
-            hist = stock.history(period="5d")
-            if not hist.empty:
-                current_price = hist['Close'].iloc[-1]
-                prev_close = hist['Close'].iloc[-2] if len(hist) > 1 else current_price
-            else:
-                current_price, prev_close = 0.0, 0.0
+        if current_price and not np.isnan(float(current_price)):
+            prev = prev_close if (prev_close and not np.isnan(float(prev_close))) else current_price
+            return float(current_price), float(prev)
+    except Exception:
+        pass
 
-        return float(current_price), float(prev_close if prev_close else current_price)
-    except:
-        return 0.0, 0.0
+    # --- Layer 2: history("2d") ---
+    try:
+        hist = stock.history(period="2d", timeout=8)
+        if not hist.empty and len(hist) >= 1:
+            current_price = float(hist['Close'].iloc[-1])
+            prev_close    = float(hist['Close'].iloc[-2]) if len(hist) >= 2 else current_price
+            if not np.isnan(current_price):
+                return current_price, prev_close
+    except Exception:
+        pass
+
+    # --- Layer 3: yf.download fallback ---
+    try:
+        df = yf.download(ticker, period="2d", interval="1d",
+                         auto_adjust=True, progress=False, timeout=8)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.droplevel(1)
+        if not df.empty:
+            current_price = float(df['Close'].iloc[-1])
+            prev_close    = float(df['Close'].iloc[-2]) if len(df) >= 2 else current_price
+            if not np.isnan(current_price):
+                return current_price, prev_close
+    except Exception:
+        pass
+
+    # --- Layer 4: 全部失败，返回标记值 ---
+    return 0.0, 0.0
+
 
 
 def extract_v3_score(text):
@@ -581,22 +614,23 @@ if not prices.empty and ticker in prices.columns:
     vix_sma = prices["^VIX"].rolling(20).mean().iloc[-1] if "^VIX" in prices.columns else 1
 
     price_val, prev_val = get_stock_data(ticker)
-    st.subheader(f"⚠️ {ticker} Real-time Sentiment Warning")
-    mentions, wsb_score = get_reddit_sentiment(ticker)
-    m1, m2, m3, m4 = st.columns(4)
 
     if price_val > 0:
         change_abs = price_val - prev_val
         change_pct = (change_abs / prev_val) * 100 if prev_val != 0 else 0
         delta_display = f"{change_abs:+.2f} ({change_pct:+.2f}%)"
-        m1.metric(
-            label="Price",
-            value=f"${price_val:.2f}",
-            delta=delta_display,
-            delta_color="normal"
-        )
+        m1.metric(label="Price", value=f"${price_val:.2f}",
+                  delta=delta_display, delta_color="normal")
     else:
-        m1.metric("Price", "Data Error", delta=None)
+        # 给出重试提示，而不是静默 Data Error
+        m1.metric("Price", "—")
+        m1.caption("⚠️ Price unavailable\nTry refreshing")
+
+    price_val, prev_val = get_stock_data(ticker)
+    st.subheader(f"⚠️ {ticker} Real-time Sentiment Warning")
+    mentions, wsb_score = get_reddit_sentiment(ticker)
+    m1, m2, m3, m4 = st.columns(4)
+
 
     m2.metric("RSI", f"{rsi_series.iloc[-1]:.2f}", delta="OB" if rsi_series.iloc[-1] > 70 else "OS" if rsi_series.iloc[-1] < 30 else "Normal")
     m3.metric("VIX", f"{current_vix:.2f}", delta=f"{((current_vix/vix_sma)-1)*100:.1f}%", delta_color="inverse")
