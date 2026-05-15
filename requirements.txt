@@ -5,7 +5,7 @@ numpy
 pytz 
 requests 
 python-dotenv
-
+google-genai
 # --- 数据库 (修复截图报错的关键) ---
 redis==5.0.1 
 upstash-redis
