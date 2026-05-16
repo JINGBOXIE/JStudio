@@ -92,56 +92,54 @@ def get_safe_earnings_date(symbol):
     return None
 
 
-# --- 稳健型价格抓取函数 ---
-@st.cache_data(ttl=60, show_spinner=False)  # 缓存 60 秒，避免同一股票重复请求
+# --- 稳健型价格抓取函数 (四层降级链) ---
+@st.cache_data(ttl=60, show_spinner=False)
 def get_stock_data(ticker):
     """
-    四层降级链：
-    Layer 1: fast_info (最快，云端最稳定)
-    Layer 2: history("2d") 取最新收盘价
-    Layer 3: download() 单独拉一次
-    Layer 4: 返回 0.0 并标记 Data Error
+    Layer 1: fast_info  — 最快，云端最稳定
+    Layer 2: history("2d") — 轻量历史接口
+    Layer 3: yf.download — 终极兜底
+    Layer 4: 返回 0.0 标记 Data Error
     """
     stock = yf.Ticker(ticker)
 
-    # --- Layer 1: fast_info (绕过 info 的限流问题) ---
+    # Layer 1: fast_info
     try:
         fi = stock.fast_info
         current_price = getattr(fi, 'last_price', None)
         prev_close    = getattr(fi, 'previous_close', None)
-
         if current_price and not np.isnan(float(current_price)):
             prev = prev_close if (prev_close and not np.isnan(float(prev_close))) else current_price
             return float(current_price), float(prev)
     except Exception:
         pass
 
-    # --- Layer 2: history("2d") ---
+    # Layer 2: history("2d")
     try:
         hist = stock.history(period="2d", timeout=8)
         if not hist.empty and len(hist) >= 1:
-            current_price = float(hist['Close'].iloc[-1])
-            prev_close    = float(hist['Close'].iloc[-2]) if len(hist) >= 2 else current_price
-            if not np.isnan(current_price):
-                return current_price, prev_close
+            cp = float(hist['Close'].iloc[-1])
+            pc = float(hist['Close'].iloc[-2]) if len(hist) >= 2 else cp
+            if not np.isnan(cp):
+                return cp, pc
     except Exception:
         pass
 
-    # --- Layer 3: yf.download fallback ---
+    # Layer 3: yf.download fallback
     try:
         df = yf.download(ticker, period="2d", interval="1d",
                          auto_adjust=True, progress=False, timeout=8)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.droplevel(1)
         if not df.empty:
-            current_price = float(df['Close'].iloc[-1])
-            prev_close    = float(df['Close'].iloc[-2]) if len(df) >= 2 else current_price
-            if not np.isnan(current_price):
-                return current_price, prev_close
+            cp = float(df['Close'].iloc[-1])
+            pc = float(df['Close'].iloc[-2]) if len(df) >= 2 else cp
+            if not np.isnan(cp):
+                return cp, pc
     except Exception:
         pass
 
-    # --- Layer 4: 全部失败，返回标记值 ---
+    # Layer 4: 全部失败
     return 0.0, 0.0
 
 
@@ -222,7 +220,7 @@ def fetch_market_indices():
     indices = {
         "DJIA": "^DJI", "NDX": "^NDX", "SPX": "^GSPC",
         "TSX": "^GSPTSE", "Crude": "CL=F", "Gold": "GC=F",
-        "USDX": "DX=F"
+        "USDX": "UUP"   # DX=F 已下架，改用美元 ETF UUP
     }
     try:
         data = yf.download(list(indices.values()), period="2d", interval="1d", auto_adjust=True)
@@ -614,23 +612,23 @@ if not prices.empty and ticker in prices.columns:
     vix_sma = prices["^VIX"].rolling(20).mean().iloc[-1] if "^VIX" in prices.columns else 1
 
     price_val, prev_val = get_stock_data(ticker)
+    st.subheader(f"⚠️ {ticker} Real-time Sentiment Warning")
+    mentions, wsb_score = get_reddit_sentiment(ticker)
+    m1, m2, m3, m4 = st.columns(4)
 
     if price_val > 0:
         change_abs = price_val - prev_val
         change_pct = (change_abs / prev_val) * 100 if prev_val != 0 else 0
         delta_display = f"{change_abs:+.2f} ({change_pct:+.2f}%)"
-        m1.metric(label="Price", value=f"${price_val:.2f}",
-                  delta=delta_display, delta_color="normal")
+        m1.metric(
+            label="Price",
+            value=f"${price_val:.2f}",
+            delta=delta_display,
+            delta_color="normal"
+        )
     else:
-        # 给出重试提示，而不是静默 Data Error
         m1.metric("Price", "—")
-        m1.caption("⚠️ Price unavailable\nTry refreshing")
-
-    price_val, prev_val = get_stock_data(ticker)
-    st.subheader(f"⚠️ {ticker} Real-time Sentiment Warning")
-    mentions, wsb_score = get_reddit_sentiment(ticker)
-    m1, m2, m3, m4 = st.columns(4)
-
+        m1.caption("⚠️ Price unavailable — try refreshing")
 
     m2.metric("RSI", f"{rsi_series.iloc[-1]:.2f}", delta="OB" if rsi_series.iloc[-1] > 70 else "OS" if rsi_series.iloc[-1] < 30 else "Normal")
     m3.metric("VIX", f"{current_vix:.2f}", delta=f"{((current_vix/vix_sma)-1)*100:.1f}%", delta_color="inverse")
