@@ -12,8 +12,34 @@ import re
 import base64
 import os
 import json
+import requests
 import streamlit.components.v1 as components
 from market_analyst import MarketAnalyst
+
+# ============================================================
+# 🔧 云端环境修复：注入浏览器 User-Agent，绕过 Yahoo Finance
+#    对 AWS/GCP 数据中心 IP 封锁（本地正常、云端 No Data 的根本原因）
+# ============================================================
+def _make_yf_session() -> requests.Session:
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection":      "keep-alive",
+    })
+    return session
+
+# 全局复用同一个 session（避免反复握手）
+if "yf_session" not in st.session_state:
+    st.session_state.yf_session = _make_yf_session()
+
+YF_SESSION = st.session_state.yf_session
 
 # --- 1. Basic Configuration ---
 st.set_page_config(
@@ -65,7 +91,7 @@ st.markdown("""
 
 # --- 增强型财报日期抓取函数 ---
 def get_safe_earnings_date(symbol):
-    stock = yf.Ticker(symbol)
+    stock = yf.Ticker(symbol, session=YF_SESSION)
     now_date = datetime.now().date()
 
     try:
@@ -92,56 +118,25 @@ def get_safe_earnings_date(symbol):
     return None
 
 
-# --- 稳健型价格抓取函数 (四层降级链) ---
-@st.cache_data(ttl=60, show_spinner=False)
+# --- 稳健型价格抓取函数 ---
 def get_stock_data(ticker):
-    """
-    Layer 1: fast_info  — 最快，云端最稳定
-    Layer 2: history("2d") — 轻量历史接口
-    Layer 3: yf.download — 终极兜底
-    Layer 4: 返回 0.0 标记 Data Error
-    """
-    stock = yf.Ticker(ticker)
-
-    # Layer 1: fast_info
     try:
-        fi = stock.fast_info
-        current_price = getattr(fi, 'last_price', None)
-        prev_close    = getattr(fi, 'previous_close', None)
-        if current_price and not np.isnan(float(current_price)):
-            prev = prev_close if (prev_close and not np.isnan(float(prev_close))) else current_price
-            return float(current_price), float(prev)
-    except Exception:
-        pass
+        stock = yf.Ticker(ticker, session=YF_SESSION)
+        info = stock.info
+        current_price = info.get('currentPrice') or info.get('regularMarketPrice')
+        prev_close = info.get('previousClose')
 
-    # Layer 2: history("2d")
-    try:
-        hist = stock.history(period="2d", timeout=8)
-        if not hist.empty and len(hist) >= 1:
-            cp = float(hist['Close'].iloc[-1])
-            pc = float(hist['Close'].iloc[-2]) if len(hist) >= 2 else cp
-            if not np.isnan(cp):
-                return cp, pc
-    except Exception:
-        pass
+        if current_price is None or (isinstance(current_price, float) and np.isnan(current_price)):
+            hist = stock.history(period="5d")
+            if not hist.empty:
+                current_price = hist['Close'].iloc[-1]
+                prev_close = hist['Close'].iloc[-2] if len(hist) > 1 else current_price
+            else:
+                current_price, prev_close = 0.0, 0.0
 
-    # Layer 3: yf.download fallback
-    try:
-        df = yf.download(ticker, period="2d", interval="1d",
-                         auto_adjust=True, progress=False, timeout=8)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.droplevel(1)
-        if not df.empty:
-            cp = float(df['Close'].iloc[-1])
-            pc = float(df['Close'].iloc[-2]) if len(df) >= 2 else cp
-            if not np.isnan(cp):
-                return cp, pc
-    except Exception:
-        pass
-
-    # Layer 4: 全部失败
-    return 0.0, 0.0
-
+        return float(current_price), float(prev_close if prev_close else current_price)
+    except:
+        return 0.0, 0.0
 
 
 def extract_v3_score(text):
@@ -152,7 +147,7 @@ def extract_v3_score(text):
 # --- 深度估值计算函数 ---
 def get_advanced_valuation(ticker, discount_rate=0.15):
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker, session=YF_SESSION)
         info = stock.info
 
         fcf = info.get('freeCashflow') or info.get('operatingCashflow', 0) * 0.8
@@ -196,7 +191,7 @@ def get_advanced_valuation(ticker, discount_rate=0.15):
 
 def get_external_consensus(ticker):
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker, session=YF_SESSION)
         info = stock.info
         consensus_raw = info.get('recommendationKey', 'hold').replace('_', ' ').title()
         target_mean = info.get('targetMeanPrice', 0)
@@ -220,10 +215,10 @@ def fetch_market_indices():
     indices = {
         "DJIA": "^DJI", "NDX": "^NDX", "SPX": "^GSPC",
         "TSX": "^GSPTSE", "Crude": "CL=F", "Gold": "GC=F",
-        "USDX": "UUP"   # DX=F 已下架，改用美元 ETF UUP
+        "USDX": "DX=F"
     }
     try:
-        data = yf.download(list(indices.values()), period="2d", interval="1d", auto_adjust=True)
+        data = yf.download(list(indices.values()), period="2d", interval="1d", auto_adjust=True, session=YF_SESSION)
 
         if isinstance(data.columns, pd.MultiIndex):
             if 'Close' in data.columns.levels[0]:
@@ -253,7 +248,7 @@ def fetch_market_indices():
 @st.cache_data(ttl=3600)
 def fetch_financial_data(ticker, days):
     try:
-        data = yf.download([ticker, "^VIX"], period=f"{days}d", interval="1d", auto_adjust=False)
+        data = yf.download([ticker, "^VIX"], period=f"{days}d", interval="1d", auto_adjust=False, session=YF_SESSION)
         if isinstance(data.columns, pd.MultiIndex):
             prices = data['Adj Close']
         else:
@@ -265,7 +260,7 @@ def fetch_financial_data(ticker, days):
 
 def get_reddit_sentiment(ticker):
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker, session=YF_SESSION)
         hist = stock.history(period="5d")
         if hist.empty: return 0, "Neutral"
 
@@ -627,8 +622,7 @@ if not prices.empty and ticker in prices.columns:
             delta_color="normal"
         )
     else:
-        m1.metric("Price", "—")
-        m1.caption("⚠️ Price unavailable — try refreshing")
+        m1.metric("Price", "Data Error", delta=None)
 
     m2.metric("RSI", f"{rsi_series.iloc[-1]:.2f}", delta="OB" if rsi_series.iloc[-1] > 70 else "OS" if rsi_series.iloc[-1] < 30 else "Normal")
     m3.metric("VIX", f"{current_vix:.2f}", delta=f"{((current_vix/vix_sma)-1)*100:.1f}%", delta_color="inverse")
@@ -636,7 +630,7 @@ if not prices.empty and ticker in prices.columns:
 
     # Technical Chart
     st.subheader("📈 Technical Analysis (Bollinger + MACD)")
-    daily = yf.download(ticker, period="1y", interval="1d")
+    daily = yf.download(ticker, period="1y", interval="1d", session=YF_SESSION)
     if isinstance(daily.columns, pd.MultiIndex): daily.columns = daily.columns.droplevel(1)
 
     ma20 = daily['Close'].rolling(20).mean()
@@ -771,7 +765,7 @@ if not prices.empty and ticker in prices.columns:
     vix_col, earn_col = st.columns([2, 1])
     with vix_col:
         st.subheader("📉 VIX Volatility Trend")
-        vix_df = yf.download("^VIX", period=f"{lookback}d")
+        vix_df = yf.download("^VIX", period=f"{lookback}d", session=YF_SESSION)
         if isinstance(vix_df.columns, pd.MultiIndex): vix_df.columns = vix_df.columns.droplevel(1)
         fig_v, ax_v = plt.subplots(figsize=(8, 3))
         ax_v.plot(vix_df.index, vix_df['Close'], color='red')
@@ -1077,7 +1071,7 @@ if not prices.empty and ticker in prices.columns:
             * **Percentile**: Metrics below the **20th percentile** over 5 years often indicate a "Historical Floor."
             """)
 
-    with st.expander("💡 进阶指南：如何区分"黄金坑"与"估值陷阱"" if report_lang == "中文" else "💡 Advanced Guide: Golden Pit vs. Value Trap"):
+    with st.expander("💡 进阶指南：如何区分「黄金坑」与「估值陷阱」" if report_lang == "中文" else "💡 Advanced Guide: Golden Pit vs. Value Trap"):
         if report_lang == "中文":
             st.info("""
             **🔍 识别黄金坑 (Golden Pit)**
@@ -1107,7 +1101,7 @@ if not prices.empty and ticker in prices.columns:
     def fetch_2026_news(symbol):
         news_items = []
         try:
-            raw_yf = yf.Ticker(symbol).news
+            raw_yf = yf.Ticker(symbol, session=YF_SESSION).news
             for item in raw_yf[:5]:
                 title = item.get('title') or item.get('headline') or (item.get('content', {}).get('title')) or "News Update"
                 link = item.get('link') or item.get('url') or "https://finance.yahoo.com"

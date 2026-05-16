@@ -2,8 +2,26 @@ import streamlit as st
 import yfinance as yf
 import ai_engine_v3 as ae3
 import os
+import requests
 from datetime import datetime
 import streamlit.components.v1 as components
+
+def _make_yf_session() -> requests.Session:
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection":      "keep-alive",
+    })
+    return session
+
+_YF_SESSION = _make_yf_session()
 
 
 def _check_api_key() -> bool:
@@ -31,7 +49,7 @@ class MarketAnalyst:
 
     def _get_stock_data(self, symbol):
         try:
-            ticker = yf.Ticker(symbol)
+            ticker = yf.Ticker(symbol, session=_YF_SESSION)
             # 优先用 fast_info，避免 info 接口限流
             fi = ticker.fast_info
             current_price = getattr(fi, 'last_price', None)
